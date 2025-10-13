@@ -10,7 +10,7 @@ public class Main {
         try {
             // 请确保这两个文件存在
             String doc1Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\2023年度安全生产费用使用管理台账.docx";
-            String doc2Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\川AAB980-行车日志.docx";
+            String doc2Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\鲁CV5566.docx";
             String outputPath = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\3.docx";
 
             DocxMerger merger = new DocxMerger();

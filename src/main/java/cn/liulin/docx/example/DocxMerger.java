@@ -60,6 +60,9 @@ public class DocxMerger {
         }
         System.out.println("✅ 文档内容合并完成，共添加 " + objectCount + " 个内容项");
 
+        // 修复对齐元素，确保符合Open XML规范
+        fixJustificationElements(doc1);
+
         // ✅ 8. 获取 doc2 的最后一个节属性（SectPr）
         SectPr lastSectPr = findLastSectPr(main2);
         
@@ -109,6 +112,113 @@ public class DocxMerger {
         // ✅ 11. 保存文档
         doc1.save(output);
         System.out.println("✅ 文档已成功合并并保存到: " + outputPath);
+    }
+
+    /**
+     * 修复对齐元素，确保所有 jc 元素都有 val 属性
+     */
+    private void fixJustificationElements(WordprocessingMLPackage doc) {
+        try {
+            // 获取文档的XML内容
+            String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
+            
+            // 修复所有缺失val属性的jc元素
+            xmlContent = fixMissingValAttributes(xmlContent);
+            
+            // 修复重复的ID问题
+            xmlContent = fixDuplicateIdsInXml(xmlContent);
+            
+            // 将更新后的XML内容重新设置到文档中
+            org.docx4j.wml.Document document = (org.docx4j.wml.Document) 
+                XmlUtils.unmarshalString(xmlContent);
+            doc.getMainDocumentPart().setJaxbElement(document);
+            
+            System.out.println("✅ 对齐元素和ID修复完成");
+        } catch (Exception e) {
+            System.err.println("⚠️ 修复对齐元素时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 修复XML中缺失val属性的jc元素
+     */
+    private String fixMissingValAttributes(String xmlContent) {
+        // 修复自闭合的jc标签缺失val属性的问题
+        xmlContent = xmlContent.replaceAll(
+            "<w:jc\\s*/>", 
+            "<w:jc w:val=\"center\"/>");
+            
+        // 修复带有属性但缺少val属性的jc开始标签
+        xmlContent = xmlContent.replaceAll(
+            "<w:jc((?![^>]*\\bw:val\\b)[^>]*/?)>", 
+            "<w:jc w:val=\"center\"$1>");
+            
+        return xmlContent;
+    }
+    
+    /**
+     * 修复XML中的重复ID问题
+     */
+    private String fixDuplicateIdsInXml(String xmlContent) {
+        // 使用正则表达式查找并修复重复的ID
+        // 这里我们简单地为所有bookmarkStart和bookmarkEnd元素生成新的唯一ID
+        java.util.regex.Pattern bookmarkStartPattern = java.util.regex.Pattern.compile(
+            "<w:bookmarkStart[^>]*w:id\\s*=\\s*\"([^\"]*)\"[^>]*/>");
+        java.util.regex.Matcher matcher = bookmarkStartPattern.matcher(xmlContent);
+        
+        java.util.Set<String> usedIds = new java.util.HashSet<>();
+        java.util.Map<String, String> idReplacements = new java.util.HashMap<>();
+        
+        // 收集所有现有的ID
+        while (matcher.find()) {
+            String id = matcher.group(1);
+            if (usedIds.contains(id)) {
+                // 生成新的唯一ID
+                String newId = generateUniqueID(usedIds);
+                idReplacements.put(id, newId);
+                usedIds.add(newId);
+            } else {
+                usedIds.add(id);
+            }
+        }
+        
+        // 也检查bookmarkEnd元素
+        java.util.regex.Pattern bookmarkEndPattern = java.util.regex.Pattern.compile(
+            "<w:bookmarkEnd[^>]*w:id\\s*=\\s*\"([^\"]*)\"[^>]*/>");
+        matcher = bookmarkEndPattern.matcher(xmlContent);
+        
+        while (matcher.find()) {
+            String id = matcher.group(1);
+            if (usedIds.contains(id)) {
+                // 生成新的唯一ID
+                String newId = generateUniqueID(usedIds);
+                idReplacements.put(id, newId);
+                usedIds.add(newId);
+            } else {
+                usedIds.add(id);
+            }
+        }
+        
+        // 替换重复的ID
+        for (java.util.Map.Entry<String, String> entry : idReplacements.entrySet()) {
+            xmlContent = xmlContent.replaceAll(
+                "w:id\\s*=\\s*\"" + java.util.regex.Pattern.quote(entry.getKey()) + "\"",
+                "w:id=\"" + entry.getValue() + "\"");
+        }
+        
+        return xmlContent;
+    }
+    
+    /**
+     * 生成唯一ID
+     */
+    private String generateUniqueID(java.util.Set<String> existingIds) {
+        String newId;
+        do {
+            newId = String.valueOf(System.currentTimeMillis() % 1000000 + Math.round(Math.random() * 1000));
+        } while (existingIds.contains(newId));
+        return newId;
     }
 
     /**
