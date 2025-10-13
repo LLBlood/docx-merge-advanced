@@ -52,10 +52,14 @@ public class DocxMerger {
         // ✅ 5. 保存第一个文档的节属性设置
         SectPr firstDocSectPr = getPgSzSettings(main1);
         
-        // ✅ 6. 在合并前添加分节符，保持文档页面设置独立
+        // ✅ 6. 移除文档网格设置
+        removeDocumentGridSettings(doc1);
+        removeDocumentGridSettings(doc2);
+
+        // ✅ 7. 在合并前添加分节符，保持文档页面设置独立
         addSectionBreak(main1);
 
-        // ✅ 7. 将 doc2 的所有内容追加到 doc1
+        // ✅ 8. 将 doc2 的所有内容追加到 doc1
         // 使用 addObject() 以触发样式/字体发现
         System.out.println("📄 开始合并文档内容，doc2内容项数: " + main2.getContent().size());
         int objectCount = 0;
@@ -74,7 +78,7 @@ public class DocxMerger {
         fixJustificationElements(doc1, formatProperties);
         System.out.println("🔧 对齐元素修复完成");
 
-        // ✅ 8. 获取 doc2 的最后一个节属性（SectPr）
+        // ✅ 9. 获取 doc2 的最后一个节属性（SectPr）
         SectPr lastSectPr = findLastSectPr(main2);
         
         // 如果找不到最后一个节属性，则尝试获取文档默认的节属性
@@ -82,7 +86,7 @@ public class DocxMerger {
             lastSectPr = getPgSzSettings(main2);
         }
 
-        // ✅ 9. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
+        // ✅ 10. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
         if (lastSectPr != null) {
             ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
             P newSection = factory.createP();
@@ -119,13 +123,13 @@ public class DocxMerger {
             System.out.println("✅ 已添加默认节属性设置");
         }
 
-        // ✅ 10. 确保输出目录存在
+        // ✅ 11. 确保输出目录存在
         File output = new File(outputPath);
         if (!output.getParentFile().exists()) {
             output.getParentFile().mkdirs();
         }
 
-        // ✅ 11. 保存文档
+        // ✅ 12. 保存文档
         doc1.save(output);
         System.out.println("✅ 文档已成功合并并保存到: " + outputPath);
     }
@@ -138,6 +142,9 @@ public class DocxMerger {
             // 获取文档的XML内容
             String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
             System.out.println("📄 原始XML内容长度: " + xmlContent.length());
+            
+            // 在合并前就移除段落中的对齐到网络设置
+            xmlContent = removeParagraphSnapToGridSettings(xmlContent);
             
             // 修复所有缺失val属性的jc元素
             xmlContent = fixMissingValAttributes(xmlContent);
@@ -401,5 +408,82 @@ public class DocxMerger {
             return wmlDocument.getBody().getSectPr();
         }
         return null;
+    }
+    
+    /**
+     * 移除段落中的对齐到网络设置
+     * 
+     * @param xmlContent XML内容
+     * @return 修复后的XML内容
+     */
+    private String removeParagraphSnapToGridSettings(String xmlContent) {
+        System.out.println("📐 开始移除段落中的对齐到网络设置（合并前处理）");
+        
+        // 移除段落属性中的snapToGrid设置
+        int beforeRemoval = xmlContent.length();
+        
+        // 处理段落属性标签内包含snapToGrid属性的情况
+        xmlContent = xmlContent.replaceAll(
+            "(<w:pPr[^>]*?)\\s+w:snapToGrid\\s*=\\s*\"[^\"]*\"([^>]*?>)", 
+            "$1$2");
+        
+        // 如果pPr标签因此变为空标签，则简化它
+        xmlContent = xmlContent.replaceAll(
+            "<w:pPr\\s*>\\s*</w:pPr>", 
+            "<w:pPr/>");
+            
+        // 处理自闭合的包含snapToGrid的pPr标签
+        xmlContent = xmlContent.replaceAll(
+            "<w:pPr\\s+[^>]*w:snapToGrid\\s*=\\s*\"[^\"]*\"[^>]*/>", 
+            "<w:pPr/>");
+            
+        // 处理文档网格中的snapToGrid设置
+        xmlContent = xmlContent.replaceAll(
+            "<w:docGrid\\s+[^>]*w:snapToGrid\\s*=\\s*\"[^\"]*\"[^>]*/?>", 
+            "<w:docGrid/>");
+            
+        // 处理独立的docGrid标签
+        xmlContent = xmlContent.replaceAll(
+            "<w:docGrid\\s*/>", 
+            "");
+            
+        // 移除空的docGrid标签
+        xmlContent = xmlContent.replaceAll(
+            "<w:docGrid\\s*>\\s*</w:docGrid>", 
+            "");
+        
+        int afterRemoval = xmlContent.length();
+        System.out.println("📐 移除对齐到网络设置: " + (beforeRemoval - afterRemoval) + " 字符变化");
+        
+        return xmlContent;
+    }
+    
+    /**
+     * 移除文档网格设置
+     * 
+     * @param doc Word文档
+     */
+    private void removeDocumentGridSettings(WordprocessingMLPackage doc) {
+        try {
+            System.out.println("📐 开始移除文档网格设置");
+            
+            // 获取文档的body元素
+            org.docx4j.wml.Document wmlDocument = doc.getMainDocumentPart().getJaxbElement();
+            if (wmlDocument != null && wmlDocument.getBody() != null) {
+                SectPr sectPr = wmlDocument.getBody().getSectPr();
+                if (sectPr != null) {
+                    // 移除文档网格设置
+                    sectPr.setDocGrid(null);
+                    System.out.println("✅ 文档网格设置已移除");
+                } else {
+                    System.out.println("⚠️ 未找到节属性设置");
+                }
+            } else {
+                System.out.println("⚠️ 未找到文档主体");
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ 移除文档网格设置时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

@@ -153,6 +153,35 @@ public class TableFormatPreserver {
             
             System.out.println("✅ doc2字体大小信息保存完成，共保存 " + doc2SzIndex + " 个字体大小设置");
             
+            // 保存doc1的段落缩进信息（特别是表格内的段落）
+            Pattern indentPattern = Pattern.compile("<w:ind\\s+([^>]+w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+            matcher = indentPattern.matcher(doc1XmlContent);
+            
+            int doc1IndIndex = 0;
+            while (matcher.find()) {
+                String fullAttrs = matcher.group(1);
+                String indValue = matcher.group(2);
+                formatProperties.put("doc1_ind_" + doc1IndIndex, indValue);
+                System.out.println("-indent- 保存doc1段落缩进[" + doc1IndIndex + "]: " + indValue);
+                doc1IndIndex++;
+            }
+            
+            System.out.println("✅ doc1段落缩进信息保存完成，共保存 " + doc1IndIndex + " 个缩进设置");
+            
+            // 保存doc2的段落缩进信息（特别是表格内的段落）
+            matcher = indentPattern.matcher(doc2XmlContent);
+            
+            int doc2IndIndex = 0;
+            while (matcher.find()) {
+                String fullAttrs = matcher.group(1);
+                String indValue = matcher.group(2);
+                formatProperties.put("doc2_ind_" + doc2IndIndex, indValue);
+                System.out.println("-indent- 保存doc2段落缩进[" + doc2IndIndex + "]: " + indValue);
+                doc2IndIndex++;
+            }
+            
+            System.out.println("✅ doc2段落缩进信息保存完成，共保存 " + doc2IndIndex + " 个缩进设置");
+            
             System.out.println("💾 格式信息保存完成，总共保存了 " + formatProperties.size() + " 个格式属性");
             
         } catch (Exception e) {
@@ -203,6 +232,14 @@ public class TableFormatPreserver {
             // 精确恢复两个文档的字体大小设置
             result = restoreFontSizeSettings(result, formatProperties);
             System.out.println("📏 字体大小恢复后XML长度: " + result.length());
+            
+            // 精确恢复两个文档的段落缩进设置
+            result = restoreIndentSettings(result, formatProperties);
+            System.out.println("-indent- 段落缩进恢复后XML长度: " + result.length());
+            
+            // 移除表格内段落的首行缩进（特别处理表格内的段落前空格问题）
+            result = removeTableParagraphFirstLineIndent(result);
+            System.out.println("-indent- 表格内段落首行缩进移除后XML长度: " + result.length());
             
             // 修复所有缺失val属性的jc元素（表格和段落对齐）
             result = fixMissingJustificationValues(result);
@@ -383,6 +420,114 @@ public class TableFormatPreserver {
         
         System.out.println("📏 总共处理了 " + index + " 个字体大小设置");
         return sb.toString();
+    }
+    
+    /**
+     * 精确恢复两个文档的段落缩进设置
+     * 
+     * @param xmlContent XML内容
+     * @param formatProperties 格式信息
+     * @return 修复后的XML内容
+     */
+    private static String restoreIndentSettings(String xmlContent, Map<String, String> formatProperties) {
+        // 恢复doc1的段落缩进设置值（前N个）
+        int doc1IndCount = 0;
+        for (String key : formatProperties.keySet()) {
+            if (key.startsWith("doc1_ind_")) {
+                doc1IndCount++;
+            }
+        }
+        
+        System.out.println("-indent- doc1段落缩进设置数量: " + doc1IndCount);
+        
+        // 恢复段落缩进设置值
+        Pattern indPattern = Pattern.compile("<w:ind\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+        Matcher matcher = indPattern.matcher(xmlContent);
+        StringBuffer sb = new StringBuffer();
+        
+        int index = 0;
+        while (matcher.find()) {
+            String originalInd;
+            if (index < doc1IndCount) {
+                // 这是doc1的段落缩进设置
+                originalInd = formatProperties.get("doc1_ind_" + index);
+            } else {
+                // 这是doc2的段落缩进设置
+                originalInd = formatProperties.get("doc2_ind_" + (index - doc1IndCount));
+            }
+            
+            if (originalInd != null) {
+                // 恢复原始段落缩进值
+                String fullAttrs = matcher.group(1);
+                String currentInd = matcher.group(2);
+                
+                // 替换为原始值
+                String newFullAttrs = fullAttrs.replace("w:val=\"" + currentInd + "\"", 
+                                                       "w:val=\"" + originalInd + "\"");
+                matcher.appendReplacement(sb, "<w:ind " + newFullAttrs + ">");
+                System.out.println("🔧 恢复第 " + (index + 1) + " 个段落缩进设置值: " + currentInd + " -> " + originalInd);
+            } else {
+                matcher.appendReplacement(sb, matcher.group(0));
+                System.out.println("⚠️ 未找到第 " + (index + 1) + " 个段落缩进的原始值");
+            }
+            index++;
+        }
+        matcher.appendTail(sb);
+        
+        System.out.println("-indent- 总共处理了 " + index + " 个段落缩进设置");
+        return sb.toString();
+    }
+    
+    /**
+     * 移除表格内段落的首行缩进，解决段落前空格问题
+     * 
+     * @param xmlContent XML内容
+     * @return 修复后的XML内容
+     */
+    private static String removeTableParagraphFirstLineIndent(String xmlContent) {
+        System.out.println("🗑️ 开始移除表格内段落的首行缩进");
+        
+        // 匹配表格内的段落及其缩进设置
+        Pattern tblPIndentPattern = Pattern.compile(
+            "(<w:tbl[^>]*>.*?)(<w:p[^>]*>.*?<w:ind\\s+[^>]*w:firstLine\\s*=\\s*\"[^\"]*\".*?/?>)(.*?</w:tbl>)", 
+            Pattern.DOTALL);
+        
+        Matcher matcher = tblPIndentPattern.matcher(xmlContent);
+        StringBuffer sb = new StringBuffer();
+        
+        int removedCount = 0;
+        while (matcher.find()) {
+            String beforeTbl = matcher.group(1);
+            String pWithIndent = matcher.group(2);
+            String afterP = matcher.group(3);
+            
+            // 移除首行缩进属性
+            String pWithoutFirstLineIndent = pWithIndent.replaceAll(
+                "w:firstLine\\s*=\\s*\"[^\"]*\"", "");
+            
+            matcher.appendReplacement(sb, beforeTbl + pWithoutFirstLineIndent + afterP);
+            removedCount++;
+            System.out.println("🗑️ 移除了1个表格内段落的首行缩进");
+        }
+        matcher.appendTail(sb);
+        
+        System.out.println("🗑️ 总共移除了 " + removedCount + " 个表格内段落的首行缩进");
+        return sb.toString();
+    }
+    
+    /**
+     * 移除段落中的对齐到网络设置，解决表格行高无法调整的问题
+     * 
+     * @param xmlContent XML内容
+     * @return 修复后的XML内容
+     */
+    private static String removeSnapToGridSetting(String xmlContent) {
+        System.out.println("📐 开始移除段落中的对齐到网络设置");
+        
+        // 由于已经在合并前处理了段落的snapToGrid设置，这里不再重复处理
+        System.out.println("📐 段落对齐到网络设置已在合并前处理，跳过此步骤");
+        
+        return xmlContent;
     }
     
     /**
