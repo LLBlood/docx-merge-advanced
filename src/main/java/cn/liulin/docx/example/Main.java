@@ -9,7 +9,7 @@ public class Main {
     public static void main(String[] args) {
         try {
             // 请确保这两个文件存在
-            String doc1Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\2023年度安全生产费用使用管理台账.docx";
+            String doc1Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\测试.docx";
             String doc2Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\鲁CV5566.docx";
             String outputPath = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\3.docx";
 

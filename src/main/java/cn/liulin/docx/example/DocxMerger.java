@@ -11,6 +11,7 @@ import org.docx4j.wml.PPr;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * @author liulin
@@ -43,6 +44,11 @@ public class DocxMerger {
             updateImageReferences(main2, imageRelMap);
         }
 
+        // 保存两个文档的格式信息
+        System.out.println("💾 开始保存两个文档的格式信息...");
+        Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(doc1, doc2);
+        System.out.println("💾 格式信息保存完成，共保存 " + formatProperties.size() + " 个属性");
+
         // ✅ 5. 保存第一个文档的节属性设置
         SectPr firstDocSectPr = getPgSzSettings(main1);
         
@@ -60,8 +66,13 @@ public class DocxMerger {
         }
         System.out.println("✅ 文档内容合并完成，共添加 " + objectCount + " 个内容项");
 
+        // 恢复两个文档的格式信息
+        TableFormatPreserver.restoreDocumentFormat(doc1, formatProperties);
+
         // 修复对齐元素，确保符合Open XML规范
-        fixJustificationElements(doc1);
+        System.out.println("🔧 开始修复对齐元素...");
+        fixJustificationElements(doc1, formatProperties);
+        System.out.println("🔧 对齐元素修复完成");
 
         // ✅ 8. 获取 doc2 的最后一个节属性（SectPr）
         SectPr lastSectPr = findLastSectPr(main2);
@@ -78,20 +89,24 @@ public class DocxMerger {
 
             PPr pPr = factory.createPPr();
             // 深拷贝 sectPr，避免引用共享
-            pPr.setSectPr((SectPr) org.docx4j.XmlUtils.deepCopy(lastSectPr));
+            SectPr sectPrCopy = (SectPr) org.docx4j.XmlUtils.deepCopy(lastSectPr);
+            pPr.setSectPr(sectPrCopy);
             newSection.setPPr(pPr);
 
             // 使用 addObject() 添加，触发样式/字体等处理
             main1.addObject(newSection);
+            System.out.println("✅ 已添加doc2的节属性设置");
         } else if (firstDocSectPr != null) {
             // 如果 doc2 没有节属性，但第一个文档有，则使用第一个文档的节属性
             ObjectFactory factory = Context.getWmlObjectFactory();
             P newSection = factory.createP();
             PPr pPr = factory.createPPr();
             // 深拷贝 sectPr，避免引用共享
-            pPr.setSectPr((SectPr) org.docx4j.XmlUtils.deepCopy(firstDocSectPr));
+            SectPr sectPrCopy = (SectPr) org.docx4j.XmlUtils.deepCopy(firstDocSectPr);
+            pPr.setSectPr(sectPrCopy);
             newSection.setPPr(pPr);
             main1.addObject(newSection);
+            System.out.println("✅ 已添加第一个文档的节属性设置");
         } else {
             // 如果都没有节属性，则添加一个默认的节属性来保持页面设置
             ObjectFactory factory = Context.getWmlObjectFactory();
@@ -101,6 +116,7 @@ public class DocxMerger {
             pPr.setSectPr(sectPr);
             newSection.setPPr(pPr);
             main1.addObject(newSection);
+            System.out.println("✅ 已添加默认节属性设置");
         }
 
         // ✅ 10. 确保输出目录存在
@@ -117,16 +133,20 @@ public class DocxMerger {
     /**
      * 修复对齐元素，确保所有 jc 元素都有 val 属性
      */
-    private void fixJustificationElements(WordprocessingMLPackage doc) {
+    private void fixJustificationElements(WordprocessingMLPackage doc, Map<String, String> formatProperties) {
         try {
             // 获取文档的XML内容
             String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
+            System.out.println("📄 原始XML内容长度: " + xmlContent.length());
             
             // 修复所有缺失val属性的jc元素
             xmlContent = fixMissingValAttributes(xmlContent);
             
             // 修复重复的ID问题
             xmlContent = fixDuplicateIdsInXml(xmlContent);
+            
+            // 恢复两个文档的格式
+            xmlContent = TableFormatPreserver.fixDocumentFormatInXml(xmlContent, formatProperties);
             
             // 将更新后的XML内容重新设置到文档中
             org.docx4j.wml.Document document = (org.docx4j.wml.Document) 
@@ -144,15 +164,23 @@ public class DocxMerger {
      * 修复XML中缺失val属性的jc元素
      */
     private String fixMissingValAttributes(String xmlContent) {
+        System.out.println("🔗 开始修复缺失val属性的对齐元素");
+        
         // 修复自闭合的jc标签缺失val属性的问题
+        int beforeFix1 = xmlContent.length();
         xmlContent = xmlContent.replaceAll(
             "<w:jc\\s*/>", 
             "<w:jc w:val=\"center\"/>");
+        int afterFix1 = xmlContent.length();
+        System.out.println("🔗 修复自闭合jc标签: " + (afterFix1 - beforeFix1) + " 字符变化");
             
         // 修复带有属性但缺少val属性的jc开始标签
+        int beforeFix2 = xmlContent.length();
         xmlContent = xmlContent.replaceAll(
             "<w:jc((?![^>]*\\bw:val\\b)[^>]*/?)>", 
             "<w:jc w:val=\"center\"$1>");
+        int afterFix2 = xmlContent.length();
+        System.out.println("🔗 修复带属性jc标签: " + (afterFix2 - beforeFix2) + " 字符变化");
             
         return xmlContent;
     }
@@ -161,6 +189,8 @@ public class DocxMerger {
      * 修复XML中的重复ID问题
      */
     private String fixDuplicateIdsInXml(String xmlContent) {
+        System.out.println("🆔 开始修复重复ID问题");
+        
         // 使用正则表达式查找并修复重复的ID
         // 这里我们简单地为所有bookmarkStart和bookmarkEnd元素生成新的唯一ID
         java.util.regex.Pattern bookmarkStartPattern = java.util.regex.Pattern.compile(
@@ -178,6 +208,7 @@ public class DocxMerger {
                 String newId = generateUniqueID(usedIds);
                 idReplacements.put(id, newId);
                 usedIds.add(newId);
+                System.out.println("🆔 发现重复ID: " + id + " -> " + newId);
             } else {
                 usedIds.add(id);
             }
@@ -195,6 +226,7 @@ public class DocxMerger {
                 String newId = generateUniqueID(usedIds);
                 idReplacements.put(id, newId);
                 usedIds.add(newId);
+                System.out.println("🆔 发现重复ID: " + id + " -> " + newId);
             } else {
                 usedIds.add(id);
             }
@@ -202,11 +234,15 @@ public class DocxMerger {
         
         // 替换重复的ID
         for (java.util.Map.Entry<String, String> entry : idReplacements.entrySet()) {
+            String oldId = entry.getKey();
+            String newId = entry.getValue();
             xmlContent = xmlContent.replaceAll(
-                "w:id\\s*=\\s*\"" + java.util.regex.Pattern.quote(entry.getKey()) + "\"",
-                "w:id=\"" + entry.getValue() + "\"");
+                "w:id\\s*=\\s*\"" + java.util.regex.Pattern.quote(oldId) + "\"",
+                "w:id=\"" + newId + "\"");
+            System.out.println("🆔 替换ID: " + oldId + " -> " + newId);
         }
         
+        System.out.println("🆔 ID修复完成，共替换 " + idReplacements.size() + " 个重复ID");
         return xmlContent;
     }
     
@@ -241,9 +277,16 @@ public class DocxMerger {
             
             // 保留第一个文档的页面设置
             SectPr firstDocSectPr = getPgSzSettings(main1);
-            if (firstDocSectPr != null && firstDocSectPr.getPgSz() != null) {
+            if (firstDocSectPr != null) {
                 // 复制第一页的页面大小设置
-                sectPr.setPgSz(XmlUtils.deepCopy(firstDocSectPr.getPgSz()));
+                if (firstDocSectPr.getPgSz() != null) {
+                    sectPr.setPgSz(XmlUtils.deepCopy(firstDocSectPr.getPgSz()));
+                }
+                
+                // 复制第一页的页边距设置
+                if (firstDocSectPr.getPgMar() != null) {
+                    sectPr.setPgMar(XmlUtils.deepCopy(firstDocSectPr.getPgMar()));
+                }
             }
             
             pPr.setSectPr(sectPr);
