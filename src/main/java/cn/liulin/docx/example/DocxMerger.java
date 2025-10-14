@@ -45,7 +45,8 @@ public class DocxMerger {
         MainDocumentPart main1 = doc1.getMainDocumentPart();
         MainDocumentPart main2 = doc2.getMainDocumentPart();
 
-        // ✅ 1. 处理样式冲突（重命名 doc2 的样式）
+        // ✅ 1. 处理样式冲突（重命名 doc1 和 doc2 的样式）
+        StyleRemapper.renameStyles(doc1, "_DOC1");
         StyleRemapper.renameStyles(doc2, "_DOC2");
 
         // ✅ 2. 合并样式定义（在重命名之后合并样式）
