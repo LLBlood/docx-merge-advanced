@@ -44,7 +44,7 @@ public class DocxMerger {
             updateImageReferences(main2, imageRelMap);
         }
 
-        // 保存两个文档的格式信息
+        // 保存两个文档的格式信息（暂时保留但不处理表格边框）
         System.out.println("💾 开始保存两个文档的格式信息...");
         Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(doc1, doc2);
         System.out.println("💾 格式信息保存完成，共保存 " + formatProperties.size() + " 个属性");
@@ -70,10 +70,7 @@ public class DocxMerger {
         }
         System.out.println("✅ 文档内容合并完成，共添加 " + objectCount + " 个内容项");
 
-        // 恢复两个文档的格式信息
-        TableFormatPreserver.restoreDocumentFormat(doc1, formatProperties);
-
-        // 修复对齐元素，确保符合Open XML规范
+        // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
         System.out.println("🔧 开始修复对齐元素...");
         fixJustificationElements(doc1, formatProperties);
         System.out.println("🔧 对齐元素修复完成");
@@ -152,7 +149,7 @@ public class DocxMerger {
             // 修复重复的ID问题
             xmlContent = fixDuplicateIdsInXml(xmlContent);
             
-            // 恢复两个文档的格式
+            // 恢复两个文档的格式（包括表格边框）
             xmlContent = TableFormatPreserver.fixDocumentFormatInXml(xmlContent, formatProperties);
             
             // 将更新后的XML内容重新设置到文档中

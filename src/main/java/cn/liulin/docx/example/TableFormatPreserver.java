@@ -1,9 +1,12 @@
 package cn.liulin.docx.example;
 
+import org.docx4j.jaxb.Context;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
+import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.wml.*;
 import org.docx4j.XmlUtils;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
@@ -31,6 +34,11 @@ public class TableFormatPreserver {
         Map<String, String> formatProperties = new HashMap<>();
         
         try {
+            System.out.println("🔍 开始保存两个文档的格式信息...");
+            
+            // 保存样式信息
+            saveStyleInformation(doc1, doc2, formatProperties);
+            
             // 获取doc1的XML内容
             String doc1XmlContent = XmlUtils.marshaltoString(doc1.getMainDocumentPart().getJaxbElement(), true, true);
             System.out.println("🔍 开始保存doc1格式信息，XML长度: " + doc1XmlContent.length());
@@ -193,22 +201,6 @@ public class TableFormatPreserver {
     }
 
     /**
-     * 在文档合并后精确恢复两个文档的格式
-     * 
-     * @param mergedDoc 合并后的文档
-     * @param formatProperties 格式信息映射
-     */
-    public static void restoreDocumentFormat(WordprocessingMLPackage mergedDoc, Map<String, String> formatProperties) {
-        try {
-            // 当前实现中，我们通过fixDocumentFormatInXml方法处理
-            System.out.println("✅ 文档格式恢复完成");
-        } catch (Exception e) {
-            System.err.println("⚠️ 恢复文档格式信息时出错: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-    
-    /**
      * 通过XML操作直接修复文档格式
      * 精确恢复两个文档的格式，包括行高、字体、字体大小等
      * 
@@ -244,6 +236,10 @@ public class TableFormatPreserver {
             // 修复所有缺失val属性的jc元素（表格和段落对齐）
             result = fixMissingJustificationValues(result);
             System.out.println("🔗 对齐元素修复后XML长度: " + result.length());
+            
+            // 恢复表格边框设置
+            result = restoreTableBorders(result, formatProperties);
+            System.out.println("🔲 表格边框恢复后XML长度: " + result.length());
             
             System.out.println("✅ 文档格式XML修复完成");
             return result;
@@ -539,22 +535,135 @@ public class TableFormatPreserver {
     private static String fixMissingJustificationValues(String xmlContent) {
         System.out.println("🔗 开始修复缺失val属性的对齐元素");
         
-        // 修复自闭合的jc标签缺失val属性的问题
+        // 修复自闭合的jc标签缺失val属性的问题，但避免影响表格边框
         int beforeFix1 = xmlContent.length();
+        // 只修复不在表格内的jc标签
         xmlContent = xmlContent.replaceAll(
-            "<w:jc\\s*/>", 
-            "<w:jc w:val=\"center\"/>");
+            "(</w:tbl>|^)([^<]*(?:<(?!/w:tbl)[^<]*)*)<w:jc\\s*/>", 
+            "$1$2<w:jc w:val=\"center\"/>");
         int afterFix1 = xmlContent.length();
         System.out.println("🔗 修复自闭合jc标签: " + (afterFix1 - beforeFix1) + " 字符变化");
             
-        // 修复带有属性但缺少val属性的jc开始标签
+        // 修复带有属性但缺少val属性的jc开始标签，但避免影响表格边框
         int beforeFix2 = xmlContent.length();
         xmlContent = xmlContent.replaceAll(
-            "<w:jc((?![^>]*\\bw:val\\b)[^>]*/?)>", 
-            "<w:jc w:val=\"center\"$1>");
+            "(</w:tbl>|^)([^<]*(?:<(?!/w:tbl)[^<]*)*)<w:jc((?![^>]*\\bw:val\\b)[^>]*/?)>", 
+            "$1$2<w:jc w:val=\"center\"$3>");
         int afterFix2 = xmlContent.length();
         System.out.println("🔗 修复带属性jc标签: " + (afterFix2 - beforeFix2) + " 字符变化");
             
         return xmlContent;
+    }
+    
+    /**
+     * 恢复表格边框设置
+     * 
+     * @param xmlContent XML内容
+     * @param formatProperties 格式信息
+     * @return 修复后的XML内容
+     */
+    private static String restoreTableBorders(String xmlContent, Map<String, String> formatProperties) {
+        System.out.println("🔲 开始恢复表格边框设置");
+        
+        // 计算doc1和doc2中的表格数量
+        int doc1TableCount = 0;
+        int doc2TableCount = 0;
+        for (String key : formatProperties.keySet()) {
+            if (key.startsWith("doc1_tbl_")) {
+                doc1TableCount++;
+            } else if (key.startsWith("doc2_tbl_")) {
+                doc2TableCount++;
+            }
+        }
+        
+        System.out.println("🔲 doc1表格数量: " + doc1TableCount + ", doc2表格数量: " + doc2TableCount);
+        
+        // 提取所有表格
+        Pattern tblPattern = Pattern.compile("<w:tbl(?:\\s[^>]*)?>(.*?)</w:tbl>", Pattern.DOTALL);
+        Matcher matcher = tblPattern.matcher(xmlContent);
+        
+        StringBuffer sb = new StringBuffer();
+        int index = 0;
+        
+        while (matcher.find()) {
+            String key;
+            if (index < doc1TableCount) {
+                // 这是doc1的表格
+                key = "doc1_tbl_" + index;
+            } else if (index < doc1TableCount + doc2TableCount) {
+                // 这是doc2的表格
+                key = "doc2_tbl_" + (index - doc1TableCount);
+            } else {
+                // 超出预期的表格
+                matcher.appendReplacement(sb, matcher.group(0));
+                index++;
+                continue;
+            }
+            
+            String originalTblContent = formatProperties.get(key);
+            if (originalTblContent != null) {
+                // 提取原始表格内容中的tblPr部分（包含边框设置）
+                Pattern tblPrPattern = Pattern.compile("<w:tblPr>(.*?)</w:tblPr>", Pattern.DOTALL);
+                Matcher originalMatcher = tblPrPattern.matcher(originalTblContent);
+                
+                if (originalMatcher.find()) {
+                    String originalTblPr = originalMatcher.group(0);
+                    
+                    // 替换当前表格的tblPr部分
+                    String currentTblContent = matcher.group(0);
+                    Matcher currentMatcher = tblPrPattern.matcher(currentTblContent);
+                    
+                    if (currentMatcher.find()) {
+                        String updatedTblContent = currentTblContent.replace(currentMatcher.group(0), originalTblPr);
+                        matcher.appendReplacement(sb, updatedTblContent);
+                        System.out.println("🔲 恢复第 " + (index + 1) + " 个表格的边框设置");
+                    } else {
+                        matcher.appendReplacement(sb, matcher.group(0));
+                        System.out.println("⚠️ 第 " + (index + 1) + " 个表格没有tblPr部分");
+                    }
+                } else {
+                    matcher.appendReplacement(sb, matcher.group(0));
+                    System.out.println("⚠️ 原始第 " + (index + 1) + " 个表格没有tblPr部分");
+                }
+            } else {
+                matcher.appendReplacement(sb, matcher.group(0));
+                System.out.println("⚠️ 未找到第 " + (index + 1) + " 个表格的原始内容");
+            }
+            index++;
+        }
+        
+        matcher.appendTail(sb);
+        System.out.println("🔲 总共处理了 " + index + " 个表格的边框设置");
+        return sb.toString();
+    }
+    
+    /**
+     * 保存两个文档的样式信息
+     * 
+     * @param doc1 doc1文档
+     * @param doc2 doc2文档
+     * @param formatProperties 格式信息存储映射
+     */
+    private static void saveStyleInformation(WordprocessingMLPackage doc1, WordprocessingMLPackage doc2, Map<String, String> formatProperties) {
+        try {
+            // 保存doc1的样式信息
+            StyleDefinitionsPart stylePart1 = doc1.getMainDocumentPart().getStyleDefinitionsPart();
+            if (stylePart1 != null) {
+                String style1Xml = XmlUtils.marshaltoString(stylePart1.getJaxbElement(), true, true);
+                formatProperties.put("doc1_styles", style1Xml);
+                System.out.println("🎨 保存doc1样式信息，XML长度: " + style1Xml.length());
+            }
+            
+            // 保存doc2的样式信息
+            StyleDefinitionsPart stylePart2 = doc2.getMainDocumentPart().getStyleDefinitionsPart();
+            if (stylePart2 != null) {
+                String style2Xml = XmlUtils.marshaltoString(stylePart2.getJaxbElement(), true, true);
+                formatProperties.put("doc2_styles", style2Xml);
+                System.out.println("🎨 保存doc2样式信息，XML长度: " + style2Xml.length());
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ 保存样式信息时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
