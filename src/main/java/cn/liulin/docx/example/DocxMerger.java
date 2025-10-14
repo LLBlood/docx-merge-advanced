@@ -4,14 +4,25 @@ import org.docx4j.XmlUtils;
 import org.docx4j.jaxb.Context;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
+import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.wml.*;
 import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 
-import java.io.File;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
+import java.util.Enumeration;
+
 
 /**
  * @author liulin
@@ -23,9 +34,13 @@ public class DocxMerger {
     public void merge(String doc1Path, String doc2Path, String outputPath) throws Exception {
         System.out.println("🔄 开始合并文档...");
 
+        // 在docx4j加载文档之前，预处理原始文档，替换不兼容标签
+        String processedDoc1Path = preprocessDocument(doc1Path);
+        String processedDoc2Path = preprocessDocument(doc2Path);
+
         // 加载两个文档
-        WordprocessingMLPackage doc1 = WordprocessingMLPackage.load(new File(doc1Path));
-        WordprocessingMLPackage doc2 = WordprocessingMLPackage.load(new File(doc2Path));
+        WordprocessingMLPackage doc1 = WordprocessingMLPackage.load(new File(processedDoc1Path));
+        WordprocessingMLPackage doc2 = WordprocessingMLPackage.load(new File(processedDoc2Path));
 
         MainDocumentPart main1 = doc1.getMainDocumentPart();
         MainDocumentPart main2 = doc2.getMainDocumentPart();
@@ -33,15 +48,18 @@ public class DocxMerger {
         // ✅ 1. 处理样式冲突（重命名 doc2 的样式）
         StyleRemapper.renameStyles(doc2, "_DOC2");
 
-        // ✅ 2. 映射编号（避免列表编号混乱）
+        // ✅ 2. 合并样式定义（在重命名之后合并样式）
+        mergeStyles(doc1, doc2);
+        
+        // ✅ 3. 映射编号（避免列表编号混乱）
         NumberingMapper.mapNumbering(doc1, doc2);
 
-        // ✅ 3. 复制图片、表格等资源（处理关系）
+        // ✅ 4. 复制图片、表格等资源（处理关系）
         Map<String, String> imageRelMap = ResourceCopier.copyImages(doc1, doc2);
 
-        // ✅ 4. 更新图片引用关系
+        // ✅ 5. 更新图片引用关系
         if (!imageRelMap.isEmpty()) {
-            updateImageReferences(main2, imageRelMap);
+            updateImageReferences(doc2, imageRelMap);
         }
 
         // 保存两个文档的格式信息（暂时保留但不处理表格边框）
@@ -49,17 +67,17 @@ public class DocxMerger {
         Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(doc1, doc2);
         System.out.println("💾 格式信息保存完成，共保存 " + formatProperties.size() + " 个属性");
 
-        // ✅ 5. 保存第一个文档的节属性设置
+        // ✅ 6. 保存第一个文档的节属性设置
         SectPr firstDocSectPr = getPgSzSettings(main1);
         
-        // ✅ 6. 移除文档网格设置
+        // ✅ 7. 移除文档网格设置
         removeDocumentGridSettings(doc1);
         removeDocumentGridSettings(doc2);
 
-        // ✅ 7. 在合并前添加分节符，保持文档页面设置独立
+        // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
         addSectionBreak(main1);
 
-        // ✅ 8. 将 doc2 的所有内容追加到 doc1
+        // ✅ 9. 将 doc2 的所有内容追加到 doc1
         // 使用 addObject() 以触发样式/字体发现
         System.out.println("📄 开始合并文档内容，doc2内容项数: " + main2.getContent().size());
         int objectCount = 0;
@@ -72,18 +90,18 @@ public class DocxMerger {
 
         // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
         System.out.println("🔧 开始修复对齐元素...");
-        fixJustificationElements(doc1, formatProperties);
+        fixJustificationElements(doc1);
         System.out.println("🔧 对齐元素修复完成");
 
-        // ✅ 9. 获取 doc2 的最后一个节属性（SectPr）
-        SectPr lastSectPr = findLastSectPr(main2);
+        // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
+        SectPr lastSectPr = findLastSctPr(main2);
         
         // 如果找不到最后一个节属性，则尝试获取文档默认的节属性
         if (lastSectPr == null) {
             lastSectPr = getPgSzSettings(main2);
         }
 
-        // ✅ 10. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
+        // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
         if (lastSectPr != null) {
             ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
             P newSection = factory.createP();
@@ -120,44 +138,207 @@ public class DocxMerger {
             System.out.println("✅ 已添加默认节属性设置");
         }
 
-        // ✅ 11. 确保输出目录存在
+        // ✅ 12. 确保输出目录存在
         File output = new File(outputPath);
         if (!output.getParentFile().exists()) {
             output.getParentFile().mkdirs();
         }
 
-        // ✅ 12. 保存文档
+        // ✅ 13. 保存文档
         doc1.save(output);
         System.out.println("✅ 文档已成功合并并保存到: " + outputPath);
+        
+        // 清理临时文件
+        Files.deleteIfExists(Paths.get(processedDoc1Path));
+        Files.deleteIfExists(Paths.get(processedDoc2Path));
+    }
+
+    /**
+     * 在docx4j加载前预处理文档，替换不兼容的标签
+     * 
+     * @param docPath 原始文档路径
+     * @return 处理后的文档路径
+     * @throws Exception 处理异常
+     */
+    private String preprocessDocument(String docPath) throws Exception {
+        Path originalDoc = Paths.get(docPath);
+        Path processedDoc = Files.createTempFile("processed_", ".docx");
+        
+        // 复制原始文档到临时文件
+        Files.copy(originalDoc, processedDoc, StandardCopyOption.REPLACE_EXISTING);
+        
+        // 创建一个新的临时文件用于输出
+        Path outputDoc = Files.createTempFile("output_", ".docx");
+        
+        try (ZipFile zipFile = new ZipFile(processedDoc.toFile());
+             ZipOutputStream zipOutputStream = new ZipOutputStream(new FileOutputStream(outputDoc.toFile()))) {
+            
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                zipOutputStream.putNextEntry(new ZipEntry(entry.getName()));
+                
+                if ("word/document.xml".equals(entry.getName())) {
+                    // 处理document.xml内容
+                    try (InputStream inputStream = zipFile.getInputStream(entry);
+                         ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+                        
+                        int nRead;
+                        byte[] data = new byte[1024];
+                        while ((nRead = inputStream.read(data, 0, data.length)) != -1) {
+                            buffer.write(data, 0, nRead);
+                        }
+                        buffer.flush();
+                        
+                        String xmlContent = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+                        
+                        // 处理不兼容的标签，将w:start和w:end替换为w:left和w:right
+                        xmlContent = xmlContent.replaceAll("<w:start\\b", "<w:left");
+                        xmlContent = xmlContent.replaceAll("</w:start>", "</w:left>");
+                        xmlContent = xmlContent.replaceAll("<w:end\\b", "<w:right");
+                        xmlContent = xmlContent.replaceAll("</w:end>", "</w:right>");
+                        
+                        // 写入处理后的内容
+                        zipOutputStream.write(xmlContent.getBytes(StandardCharsets.UTF_8));
+                    }
+                } else {
+                    // 直接复制其他文件
+                    try (InputStream inputStream = zipFile.getInputStream(entry)) {
+                        byte[] buffer = new byte[1024];
+                        int length;
+                        while ((length = inputStream.read(buffer)) > 0) {
+                            zipOutputStream.write(buffer, 0, length);
+                        }
+                    }
+                }
+                
+                zipOutputStream.closeEntry();
+            }
+        }
+        
+        // 删除中间文件
+        Files.deleteIfExists(processedDoc);
+        
+        return outputDoc.toString();
+    }
+
+    /**
+     * 合并两个文档的样式定义
+     * 保留第一个文档的样式，添加第二个文档中独有的样式
+     * 
+     * @param doc1 第一个文档
+     * @param doc2 第二个文档
+     */
+    private void mergeStyles(WordprocessingMLPackage doc1, WordprocessingMLPackage doc2) {
+        try {
+            StyleDefinitionsPart stylePart1 = doc1.getMainDocumentPart().getStyleDefinitionsPart();
+            StyleDefinitionsPart stylePart2 = doc2.getMainDocumentPart().getStyleDefinitionsPart();
+            
+            if (stylePart1 == null) {
+                System.out.println("⚠️ 第一个文档没有样式定义部分");
+                return;
+            }
+            
+            if (stylePart2 == null) {
+                System.out.println("⚠️ 第二个文档没有样式定义部分");
+                return;
+            }
+            
+            Styles styles1 = stylePart1.getJaxbElement();
+            Styles styles2 = stylePart2.getJaxbElement();
+            
+            if (styles1 == null) {
+                System.out.println("⚠️ 第一个文档样式定义为空");
+                return;
+            }
+            
+            if (styles2 == null || styles2.getStyle() == null) {
+                System.out.println("⚠️ 第二个文档没有样式定义或样式为空");
+                return;
+            }
+            
+            // 创建一个映射来跟踪已存在的样式ID
+            Map<String, Style> existingStyles = new HashMap<>();
+            if (styles1.getStyle() != null) {
+                for (Style style : styles1.getStyle()) {
+                    if (style.getStyleId() != null) {
+                        existingStyles.put(style.getStyleId(), style);
+                    }
+                }
+            }
+            
+            // 遍历第二个文档的样式
+            for (Style style2 : styles2.getStyle()) {
+                String styleId = style2.getStyleId();
+                if (styleId != null) {
+                    // 检查样式是否已存在
+                    if (!existingStyles.containsKey(styleId)) {
+                        // 样式不存在，添加到第一个文档中
+                        styles1.getStyle().add(style2);
+                        System.out.println("➕ 添加样式: " + styleId);
+                    } else {
+                        // 样式已存在，我们需要检查是否是重命名的样式
+                        // 如果是重命名的样式（包含_DOC2后缀），则替换原始样式
+                        if (styleId.endsWith("_DOC2")) {
+                            // 找到对应的原始样式ID
+                            String originalStyleId = styleId.substring(0, styleId.length() - 5); // 移除"_DOC2"后缀
+                            
+                            if (existingStyles.containsKey(originalStyleId)) {
+                                // 替换原始样式
+                                Style originalStyle = existingStyles.get(originalStyleId);
+                                int index = styles1.getStyle().indexOf(originalStyle);
+                                if (index >= 0) {
+                                    styles1.getStyle().set(index, style2);
+                                    System.out.println("🔄 替换样式: " + originalStyleId + " -> " + styleId);
+                                }
+                            }
+                        } else {
+                            // 保留第一个文档的样式定义
+                            System.out.println("🔁 保留已存在的样式: " + styleId);
+                        }
+                    }
+                }
+            }
+            
+            System.out.println("✅ 样式合并完成");
+        } catch (Exception e) {
+            System.err.println("⚠️ 合并样式时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     /**
      * 修复对齐元素，确保所有 jc 元素都有 val 属性
      */
-    private void fixJustificationElements(WordprocessingMLPackage doc, Map<String, String> formatProperties) {
+    private void fixJustificationElements(WordprocessingMLPackage doc) {
         try {
-            // 获取文档的XML内容
+            // 直接使用docx4j API获取XML内容，不再需要通过ZIP方式读取
             String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
-            System.out.println("📄 原始XML内容长度: " + xmlContent.length());
+            System.out.println("📄 docx4j读取的主文档XML内容长度: " + xmlContent.length());
             
-            // 在合并前就移除段落中的对齐到网络设置
-            xmlContent = removeParagraphSnapToGridSettings(xmlContent);
-            
-            // 修复所有缺失val属性的jc元素
+            // 使用replace方法修复所有缺失val属性的jc标签
             xmlContent = fixMissingValAttributes(xmlContent);
             
-            // 修复重复的ID问题
-            xmlContent = fixDuplicateIdsInXml(xmlContent);
-            
-            // 恢复两个文档的格式（包括表格边框）
-            xmlContent = TableFormatPreserver.fixDocumentFormatInXml(xmlContent, formatProperties);
-            
-            // 将更新后的XML内容重新设置到文档中
+            // 将更新后的XML内容重新设置到文档对象中
             org.docx4j.wml.Document document = (org.docx4j.wml.Document) 
                 XmlUtils.unmarshalString(xmlContent);
             doc.getMainDocumentPart().setJaxbElement(document);
             
-            System.out.println("✅ 对齐元素和ID修复完成");
+            // 修复样式文档中的对齐元素
+            StyleDefinitionsPart stylePart = doc.getMainDocumentPart().getStyleDefinitionsPart();
+            if (stylePart != null) {
+                String styleXmlContent = XmlUtils.marshaltoString(stylePart.getJaxbElement(), true, true);
+                System.out.println("📄 原始样式XML内容长度: " + styleXmlContent.length());
+                
+                // 使用replace方法修复所有缺失val属性的jc标签
+                styleXmlContent = fixMissingValAttributes(styleXmlContent);
+                
+                // 将更新后的XML内容重新设置到样式部分中
+                Styles styles = (Styles) XmlUtils.unmarshalString(styleXmlContent);
+                stylePart.setJaxbElement(styles);
+            }
+            
+            System.out.println("✅ 对齐元素修复完成");
         } catch (Exception e) {
             System.err.println("⚠️ 修复对齐元素时出错: " + e.getMessage());
             e.printStackTrace();
@@ -170,83 +351,12 @@ public class DocxMerger {
     private String fixMissingValAttributes(String xmlContent) {
         System.out.println("🔗 开始修复缺失val属性的对齐元素");
         
-        // 修复自闭合的jc标签缺失val属性的问题
-        int beforeFix1 = xmlContent.length();
-        xmlContent = xmlContent.replaceAll(
-            "<w:jc\\s*/>", 
-            "<w:jc w:val=\"center\"/>");
-        int afterFix1 = xmlContent.length();
-        System.out.println("🔗 修复自闭合jc标签: " + (afterFix1 - beforeFix1) + " 字符变化");
+        // 使用replace方法修复所有缺失val属性的jc标签
+        int beforeFix = xmlContent.length();
+        xmlContent = xmlContent.replace("<w:jc/>", "<w:jc w:val=\"left\"/>");
+        int afterFix = xmlContent.length();
+        System.out.println("🔗 修复缺失val属性的jc标签: " + (afterFix - beforeFix) + " 字符变化");
             
-        // 修复带有属性但缺少val属性的jc开始标签
-        int beforeFix2 = xmlContent.length();
-        xmlContent = xmlContent.replaceAll(
-            "<w:jc((?![^>]*\\bw:val\\b)[^>]*/?)>", 
-            "<w:jc w:val=\"center\"$1>");
-        int afterFix2 = xmlContent.length();
-        System.out.println("🔗 修复带属性jc标签: " + (afterFix2 - beforeFix2) + " 字符变化");
-            
-        return xmlContent;
-    }
-    
-    /**
-     * 修复XML中的重复ID问题
-     */
-    private String fixDuplicateIdsInXml(String xmlContent) {
-        System.out.println("🆔 开始修复重复ID问题");
-        
-        // 使用正则表达式查找并修复重复的ID
-        // 这里我们简单地为所有bookmarkStart和bookmarkEnd元素生成新的唯一ID
-        java.util.regex.Pattern bookmarkStartPattern = java.util.regex.Pattern.compile(
-            "<w:bookmarkStart[^>]*w:id\\s*=\\s*\"([^\"]*)\"[^>]*/>");
-        java.util.regex.Matcher matcher = bookmarkStartPattern.matcher(xmlContent);
-        
-        java.util.Set<String> usedIds = new java.util.HashSet<>();
-        java.util.Map<String, String> idReplacements = new java.util.HashMap<>();
-        
-        // 收集所有现有的ID
-        while (matcher.find()) {
-            String id = matcher.group(1);
-            if (usedIds.contains(id)) {
-                // 生成新的唯一ID
-                String newId = generateUniqueID(usedIds);
-                idReplacements.put(id, newId);
-                usedIds.add(newId);
-                System.out.println("🆔 发现重复ID: " + id + " -> " + newId);
-            } else {
-                usedIds.add(id);
-            }
-        }
-        
-        // 也检查bookmarkEnd元素
-        java.util.regex.Pattern bookmarkEndPattern = java.util.regex.Pattern.compile(
-            "<w:bookmarkEnd[^>]*w:id\\s*=\\s*\"([^\"]*)\"[^>]*/>");
-        matcher = bookmarkEndPattern.matcher(xmlContent);
-        
-        while (matcher.find()) {
-            String id = matcher.group(1);
-            if (usedIds.contains(id)) {
-                // 生成新的唯一ID
-                String newId = generateUniqueID(usedIds);
-                idReplacements.put(id, newId);
-                usedIds.add(newId);
-                System.out.println("🆔 发现重复ID: " + id + " -> " + newId);
-            } else {
-                usedIds.add(id);
-            }
-        }
-        
-        // 替换重复的ID
-        for (java.util.Map.Entry<String, String> entry : idReplacements.entrySet()) {
-            String oldId = entry.getKey();
-            String newId = entry.getValue();
-            xmlContent = xmlContent.replaceAll(
-                "w:id\\s*=\\s*\"" + java.util.regex.Pattern.quote(oldId) + "\"",
-                "w:id=\"" + newId + "\"");
-            System.out.println("🆔 替换ID: " + oldId + " -> " + newId);
-        }
-        
-        System.out.println("🆔 ID修复完成，共替换 " + idReplacements.size() + " 个重复ID");
         return xmlContent;
     }
     
@@ -307,7 +417,7 @@ public class DocxMerger {
     /**
      * 更新文档中的图片引用关系
      */
-    private void updateImageReferences(MainDocumentPart doc2Part, Map<String, String> imageRelMap) {
+    private void updateImageReferences(WordprocessingMLPackage doc2Package, Map<String, String> imageRelMap) {
         if (imageRelMap.isEmpty()) {
             System.out.println("⚠️ 没有图片关系需要更新");
             return;
@@ -317,7 +427,7 @@ public class DocxMerger {
         
         try {
             // 获取文档的XML内容
-            String xmlContent = XmlUtils.marshaltoString(doc2Part.getJaxbElement(), true, true);
+            String xmlContent = XmlUtils.marshaltoString(doc2Package.getMainDocumentPart().getJaxbElement(), true, true);
             
             System.out.println("📄 原始XML内容长度: " + xmlContent.length());
             
@@ -364,7 +474,7 @@ public class DocxMerger {
                 // 将更新后的XML内容重新设置到文档中
                 org.docx4j.wml.Document document = (org.docx4j.wml.Document) 
                     XmlUtils.unmarshalString(updatedXmlContent);
-                doc2Part.setJaxbElement(document);
+                doc2Package.getMainDocumentPart().setJaxbElement(document);
             } else {
                 System.out.println("ℹ️ XML内容未发生变化");
             }
@@ -379,7 +489,7 @@ public class DocxMerger {
     /**
      * 查找 MainDocumentPart 中最后一个带有节属性的段落
      */
-    private SectPr findLastSectPr(MainDocumentPart part) {
+    private SectPr findLastSctPr(MainDocumentPart part) {
         List<Object> content = part.getContent();
         // 从后往前找
         for (int i = content.size() - 1; i >= 0; i--) {
