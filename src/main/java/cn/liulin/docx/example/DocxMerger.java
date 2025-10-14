@@ -22,6 +22,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 import java.util.Enumeration;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 /**
@@ -67,6 +69,12 @@ public class DocxMerger {
         System.out.println("💾 开始保存两个文档的格式信息...");
         Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(doc1, doc2);
         System.out.println("💾 格式信息保存完成，共保存 " + formatProperties.size() + " 个属性");
+
+        // 在合并前应用默认字体大小
+        System.out.println("📐 开始在合并前应用默认字体大小...");
+        applyDefaultFontSizesBeforeMerge(doc1, formatProperties, "doc1");
+        applyDefaultFontSizesBeforeMerge(doc2, formatProperties, "doc2");
+        System.out.println("✅ 合并前默认字体大小应用完成");
 
         // ✅ 6. 保存第一个文档的节属性设置
         SectPr firstDocSectPr = getPgSzSettings(main1);
@@ -591,6 +599,78 @@ public class DocxMerger {
             }
         } catch (Exception e) {
             System.err.println("⚠️ 移除文档网格设置时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 在合并前处理表格中的默认字体大小
+     * 只有当单元格中没有<w:sz>或<w:szCs>时才添加默认字体大小
+     */
+    private void applyDefaultFontSizesBeforeMerge(WordprocessingMLPackage doc, Map<String, String> formatProperties, String docPrefix) {
+        try {
+            System.out.println("📏 开始为" + docPrefix + "应用默认字体大小...");
+            
+            // 获取文档的XML内容
+            String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
+            
+            // 查找默认字体大小
+            String defaultSize = formatProperties.get(docPrefix + "_default_sz");
+            String defaultStyleSize = formatProperties.get(docPrefix + "_default_style_sz");
+            String defaultStyleSizeCs = formatProperties.get(docPrefix + "_default_style_szCs");
+            
+            String effectiveSize = defaultSize != null ? defaultSize : defaultStyleSize;
+            String effectiveSizeCs = defaultStyleSizeCs; // 只有在使用默认样式时才有
+            
+            System.out.println("📏 " + docPrefix + "默认字体大小: " + effectiveSize + 
+                (effectiveSizeCs != null ? " (szCs: " + effectiveSizeCs + ")" : ""));
+            
+            if (effectiveSize == null) {
+                System.out.println("⚠️ " + docPrefix + "没有找到默认字体大小，跳过处理");
+                return;
+            }
+            
+            // 处理表格单元格中的<w:r>元素，在<w:rPr>中添加字体大小
+            Pattern rPattern = Pattern.compile("(<w:r[^>]*>\\s*<w:rPr[^>]*>)(.*?)(</w:rPr>)", Pattern.DOTALL);
+            Matcher matcher = rPattern.matcher(xmlContent);
+            
+            StringBuffer sb = new StringBuffer();
+            
+            while (matcher.find()) {
+                String rStart = matcher.group(1);
+                String rPrContent = matcher.group(2);
+                String rPrEnd = matcher.group(3);
+                
+                // 只有在<w:rPr>中没有<w:sz>和<w:szCs>时才添加默认字体大小
+                if (!rPrContent.contains("<w:sz ")) {
+                    // 构建字体大小定义
+                    StringBuilder fontSizeDefinition = new StringBuilder();
+                    fontSizeDefinition.append("<w:sz w:val=\"").append(effectiveSize).append("\"/>");
+                    
+                    if (effectiveSizeCs != null && !rPrContent.contains("<w:szCs ")) {
+                        fontSizeDefinition.append("<w:szCs w:val=\"").append(effectiveSizeCs).append("\"/>");
+                    }
+                    
+                    // 在<w:rPr>中插入字体大小定义
+                    String modifiedRPrContent = rPrContent + fontSizeDefinition.toString();
+                    matcher.appendReplacement(sb, rStart + modifiedRPrContent + rPrEnd);
+                    System.out.println("📏 为" + docPrefix + "运行元素添加默认字体大小: " + effectiveSize +
+                        (effectiveSizeCs != null ? " (szCs: " + effectiveSizeCs + ")" : ""));
+                } else {
+                    matcher.appendReplacement(sb, matcher.group(0));
+                }
+            }
+            
+            matcher.appendTail(sb);
+            String result = sb.toString();
+            
+            // 将更新后的内容重新设置到文档中
+            org.docx4j.wml.Document document = (org.docx4j.wml.Document) XmlUtils.unmarshalString(result);
+            doc.getMainDocumentPart().setJaxbElement(document);
+            
+            System.out.println("✅ " + docPrefix + "默认字体大小应用完成");
+        } catch (Exception e) {
+            System.err.println("⚠️ 为" + docPrefix + "应用默认字体大小时出错: " + e.getMessage());
             e.printStackTrace();
         }
     }

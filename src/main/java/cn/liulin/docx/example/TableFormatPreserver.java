@@ -40,6 +40,22 @@ public class TableFormatPreserver {
             String doc2XmlContent = XmlUtils.marshaltoString(doc2.getMainDocumentPart().getJaxbElement(), true, true);
             System.out.println("🔍 开始保存doc2格式信息，XML长度: " + doc2XmlContent.length());
             
+            // 获取样式XML内容
+            String doc1StyleXmlContent = "";
+            String doc2StyleXmlContent = "";
+            
+            StyleDefinitionsPart stylePart1 = doc1.getMainDocumentPart().getStyleDefinitionsPart();
+            if (stylePart1 != null) {
+                doc1StyleXmlContent = XmlUtils.marshaltoString(stylePart1.getJaxbElement(), true, true);
+                System.out.println("🎨 doc1样式XML内容长度: " + doc1StyleXmlContent.length());
+            }
+            
+            StyleDefinitionsPart stylePart2 = doc2.getMainDocumentPart().getStyleDefinitionsPart();
+            if (stylePart2 != null) {
+                doc2StyleXmlContent = XmlUtils.marshaltoString(stylePart2.getJaxbElement(), true, true);
+                System.out.println("🎨 doc2样式XML内容长度: " + doc2StyleXmlContent.length());
+            }
+            
             // 保存doc1的所有trHeight元素属性
             Pattern trHeightPattern = Pattern.compile("<w:trHeight\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
             Matcher matcher = trHeightPattern.matcher(doc1XmlContent);
@@ -96,63 +112,11 @@ public class TableFormatPreserver {
             
             System.out.println("✅ doc2表格属性信息保存完成，共保存 " + doc2TblIndex + " 个表格");
             
-            // 保存doc1的字体信息
-            Pattern rFontsPattern = Pattern.compile("<w:rFonts\\s+([^>]*w:ascii\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
-            matcher = rFontsPattern.matcher(doc1XmlContent);
+            // 保存doc1的字体信息（从样式中获取默认字体）
+            saveDefaultStyleInfo(doc1StyleXmlContent, "doc1", formatProperties);
             
-            int doc1FontIndex = 0;
-            while (matcher.find()) {
-                String fullAttrs = matcher.group(1);
-                String fontValue = matcher.group(2);
-                formatProperties.put("doc1_font_" + doc1FontIndex, fontValue);
-                System.out.println("🔤 保存doc1字体[" + doc1FontIndex + "]: " + fontValue);
-                doc1FontIndex++;
-            }
-            
-            System.out.println("✅ doc1字体信息保存完成，共保存 " + doc1FontIndex + " 个字体设置");
-            
-            // 保存doc2的字体信息
-            matcher = rFontsPattern.matcher(doc2XmlContent);
-            
-            int doc2FontIndex = 0;
-            while (matcher.find()) {
-                String fullAttrs = matcher.group(1);
-                String fontValue = matcher.group(2);
-                formatProperties.put("doc2_font_" + doc2FontIndex, fontValue);
-                System.out.println("🔤 保存doc2字体[" + doc2FontIndex + "]: " + fontValue);
-                doc2FontIndex++;
-            }
-            
-            System.out.println("✅ doc2字体信息保存完成，共保存 " + doc2FontIndex + " 个字体设置");
-            
-            // 保存doc1的字体大小信息
-            Pattern szPattern = Pattern.compile("<w:sz\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
-            matcher = szPattern.matcher(doc1XmlContent);
-            
-            int doc1SzIndex = 0;
-            while (matcher.find()) {
-                String fullAttrs = matcher.group(1);
-                String szValue = matcher.group(2);
-                formatProperties.put("doc1_sz_" + doc1SzIndex, szValue);
-                System.out.println("📏 保存doc1字体大小[" + doc1SzIndex + "]: " + szValue);
-                doc1SzIndex++;
-            }
-            
-            System.out.println("✅ doc1字体大小信息保存完成，共保存 " + doc1SzIndex + " 个字体大小设置");
-            
-            // 保存doc2的字体大小信息
-            matcher = szPattern.matcher(doc2XmlContent);
-            
-            int doc2SzIndex = 0;
-            while (matcher.find()) {
-                String fullAttrs = matcher.group(1);
-                String szValue = matcher.group(2);
-                formatProperties.put("doc2_sz_" + doc2SzIndex, szValue);
-                System.out.println("📏 保存doc2字体大小[" + doc2SzIndex + "]: " + szValue);
-                doc2SzIndex++;
-            }
-            
-            System.out.println("✅ doc2字体大小信息保存完成，共保存 " + doc2SzIndex + " 个字体大小设置");
+            // 保存doc2的字体信息（从样式中获取默认字体）
+            saveDefaultStyleInfo(doc2StyleXmlContent, "doc2", formatProperties);
             
             // 保存doc1的段落缩进信息（特别是表格内的段落）
             Pattern indentPattern = Pattern.compile("<w:ind\\s+([^>]+w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
@@ -191,6 +155,71 @@ public class TableFormatPreserver {
         }
         
         return formatProperties;
+    }
+    
+    /**
+     * 保存默认样式(Normal样式)的字体和字体大小信息
+     * 
+     * @param xmlContent XML内容
+     * @param docPrefix 文档前缀
+     * @param formatProperties 格式属性映射
+     */
+    private static void saveDefaultStyleInfo(String xmlContent, String docPrefix, Map<String, String> formatProperties) {
+        try {
+            // 查找默认段落样式(Normal样式)
+            Pattern stylePattern = Pattern.compile(
+                "<w:style[^>]*w:type=\"paragraph\"[^>]*>.*?<w:name\\s+w:val=\"Normal\"\\s*/>.*?</w:style>", 
+                Pattern.DOTALL);
+            Matcher styleMatcher = stylePattern.matcher(xmlContent);
+            
+            if (styleMatcher.find()) {
+                String styleContent = styleMatcher.group(0);
+                
+                // 提取字体主题信息
+                Pattern fontPattern = Pattern.compile(
+                    "<w:rFonts\\s+([^>]*w:asciiTheme\\s*=\\s*\"([^\"]+)\"[^>]*w:hAnsiTheme\\s*=\\s*\"([^\"]+)\"[^>]*w:eastAsiaTheme\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+                Matcher fontMatcher = fontPattern.matcher(styleContent);
+                
+                if (fontMatcher.find()) {
+                    String fullAttrs = fontMatcher.group(1);
+                    String asciiTheme = fontMatcher.group(2);
+                    String hAnsiTheme = fontMatcher.group(3);
+                    String eastAsiaTheme = fontMatcher.group(4);
+                    
+                    formatProperties.put(docPrefix + "_default_style_font_asciiTheme", asciiTheme);
+                    formatProperties.put(docPrefix + "_default_style_font_hAnsiTheme", hAnsiTheme);
+                    formatProperties.put(docPrefix + "_default_style_font_eastAsiaTheme", eastAsiaTheme);
+                    
+                    System.out.println("🔤 保存" + docPrefix + "默认样式(Normal)字体主题: asciiTheme=" + asciiTheme + 
+                        ", hAnsiTheme=" + hAnsiTheme + ", eastAsiaTheme=" + eastAsiaTheme);
+                }
+                
+                // 提取字体大小信息
+                Pattern sizePattern = Pattern.compile("<w:sz\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+                Matcher sizeMatcher = sizePattern.matcher(styleContent);
+                
+                if (sizeMatcher.find()) {
+                    String fullAttrs = sizeMatcher.group(1);
+                    String szValue = sizeMatcher.group(2);
+                    formatProperties.put(docPrefix + "_default_style_sz", szValue);
+                    System.out.println("📏 保存" + docPrefix + "默认样式(Normal)字体大小: " + szValue);
+                }
+                
+                // 提取复杂字体大小信息
+                Pattern sizeCsPattern = Pattern.compile("<w:szCs\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+                Matcher sizeCsMatcher = sizeCsPattern.matcher(styleContent);
+                
+                if (sizeCsMatcher.find()) {
+                    String fullAttrs = sizeCsMatcher.group(1);
+                    String szCsValue = sizeCsMatcher.group(2);
+                    formatProperties.put(docPrefix + "_default_style_szCs", szCsValue);
+                    System.out.println("📏 保存" + docPrefix + "默认样式(Normal)复杂字体大小: " + szCsValue);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("⚠️ 保存默认样式信息时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     /**
