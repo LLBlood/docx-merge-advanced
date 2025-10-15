@@ -186,6 +186,10 @@ public class DocxMergerList {
                         xmlContent = xmlContent.replaceAll("<w:end\\b", "<w:right");
                         xmlContent = xmlContent.replaceAll("</w:end>", "</w:right>");
                         
+                        // 移除页眉页脚引用
+                        xmlContent = xmlContent.replaceAll("<w:headerReference[^>]*/>", "");
+                        xmlContent = xmlContent.replaceAll("<w:footerReference[^>]*/>", "");
+                        
                         // 写入处理后的内容
                         zipOutputStream.write(xmlContent.getBytes(StandardCharsets.UTF_8));
                     }
