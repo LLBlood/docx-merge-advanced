@@ -9,8 +9,7 @@ import org.docx4j.openpackaging.parts.relationships.Namespaces;
 import org.docx4j.openpackaging.parts.relationships.RelationshipsPart;
 import org.docx4j.relationships.Relationship;
 import org.docx4j.wml.Document;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 
 import java.util.HashMap;
 import java.util.List;
@@ -22,9 +21,11 @@ import java.util.Map;
  * @date 2025/10/11 14:39
  */
 public class ResourceCopier {
-    private static final Logger logger = LogManager.getLogger(ResourceCopier.class);
+    private static final Logger logger = LoggerUtil.getLogger(ResourceCopier.class);
 
     public static void copyImages(List<WordprocessingMLPackage> docPath) {
+        LoggerUtil.logMethodEntry(logger, "copyImages", docPath != null ? docPath.size() : 0);
+        
         WordprocessingMLPackage doc1 = docPath.get(0);
         try {
             logger.info("开始复制图片资源...");
@@ -106,8 +107,10 @@ public class ResourceCopier {
             }
 
         } catch (Exception e) {
-            logger.error("复制图片失败: {}", e.getMessage(), e);
+            LoggerUtil.logMethodException(logger, "copyImages", e);
         }
+        
+        LoggerUtil.logMethodExit(logger, "copyImages", "图片复制完成");
     }
 
 

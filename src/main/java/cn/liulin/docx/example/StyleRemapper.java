@@ -4,8 +4,8 @@ import org.docx4j.TraversalUtil;
 import org.docx4j.finders.ClassFinder;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.wml.*;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +17,7 @@ import java.util.Map;
  * @date 2025/10/11 14:38
  */
 public class StyleRemapper {
-    private static final Logger logger = LogManager.getLogger(StyleRemapper.class);
+    private static final Logger logger = LoggerFactory.getLogger(StyleRemapper.class);
 
     public static void renameStyles(WordprocessingMLPackage doc, String suffix) {
         Styles styles = doc.getMainDocumentPart().getStyleDefinitionsPart().getJaxbElement();

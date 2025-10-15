@@ -6,8 +6,8 @@ import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.wml.Numbering.Num;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigInteger;
 import java.util.HashMap;
@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.List;
 
 public class NumberingMapper {
-    private static final Logger logger = LogManager.getLogger(NumberingMapper.class);
+    private static final Logger logger = LoggerFactory.getLogger(NumberingMapper.class);
 
     /**
      * 将 doc2 的编号定义合并到 doc1，并重映射 numId 避免冲突

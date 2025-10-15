@@ -6,8 +6,7 @@ import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.wml.*;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -32,114 +31,120 @@ import java.util.zip.ZipOutputStream;
  * @date 2025/10/11 14:38
  */
 public class DocxMergerList {
-    private static final Logger logger = LogManager.getLogger(DocxMergerList.class);
+    private static final Logger logger = LoggerUtil.getLogger(DocxMergerList.class);
 
     public void mergeList(List<String> docPathList, String outputPath) throws Exception {
-        logger.info("开始合并文档...");
-
-        // 在docx4j加载文档之前，预处理原始文档，替换不兼容标签
-        List<String> processedDocPathList = new ArrayList<>();
-        for (String docPath : docPathList) {
-            String outPath = preprocessDocument(docPath);
-            processedDocPathList.add(outPath);
-        }
-
-        List<WordprocessingMLPackage> docList = new ArrayList<>();
-        for (String processedDocPath : processedDocPathList) {
-            WordprocessingMLPackage load = WordprocessingMLPackage.load(new File(processedDocPath));
-            docList.add(load);
-        }
-
-        // ✅ 1. 处理样式冲突（重命名 doc1 和 doc2 的样式）
-        for (int i = 0; i < docList.size(); i++) {
-            StyleRemapper.renameStyles(docList.get(i), "_DOC" + (i + 1));
-        }
-
-        // ✅ 2. 合并样式定义（在重命名之后合并样式）
-        mergeStyles(docList);
+        LoggerUtil.logMethodEntry(logger, "mergeList", docPathList, outputPath);
         
-        // ✅ 3. 映射编号（避免列表编号混乱）
-        NumberingMapper.mapNumbering(docList);
+        try {
+            logger.info("开始合并文档...");
 
-        // ✅ 4. 复制图片、表格等资源（处理关系）
-        ResourceCopier.copyImages(docList);
-
-        // 保存两个文档的格式信息（暂时保留但不处理表格边框）
-        logger.info("开始保存文档的格式信息...");
-        Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(docList);
-        logger.info("格式信息保存完成，共保存 {} 个属性", formatProperties.size());
-
-        // 在合并前应用默认字体大小
-        logger.info("开始在合并前应用默认字体大小...");
-        for (int i = 0; i < docList.size(); i++) {
-            applyDefaultFontSizesBeforeMerge(docList.get(i), formatProperties, "doc" + (i + 1));
-        }
-        logger.info("合并前默认字体大小应用完成");
-
-        // ✅ 6. 保存第一个文档的节属性设置
-        MainDocumentPart main1 = docList.get(0).getMainDocumentPart();
-        SectPr firstDocSectPr = getPgSzSettings(main1);
-        
-        // ✅ 7. 移除文档网格设置
-        for (WordprocessingMLPackage doc : docList) {
-            removeDocumentGridSettings(doc);
-        }
-
-
-
-        // ✅ 9. 将 doc2 的所有内容追加到 doc1
-        // 使用 addObject() 以触发样式/字体发现
-        for (int i = 1; i < docList.size(); i++) {
-            // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
-            P sectionBreak = getSectionBreak(docList.get(i - 1).getMainDocumentPart());
-            main1.addObject(sectionBreak);
-            MainDocumentPart tempMain = docList.get(i).getMainDocumentPart();
-            logger.info("开始合并文档内容，doc内容项数: {}", tempMain.getContent().size());
-            int objectCount = 0;
-            for (Object obj : tempMain.getContent()) {
-                objectCount++;
-                logger.debug("正在添加第 {} 个内容项: {}", objectCount, obj.getClass().getSimpleName());
-                main1.addObject(obj);
+            // 在docx4j加载文档之前，预处理原始文档，替换不兼容标签
+            List<String> processedDocPathList = new ArrayList<>();
+            for (String docPath : docPathList) {
+                String outPath = preprocessDocument(docPath);
+                processedDocPathList.add(outPath);
             }
-            logger.info("文档内容合并完成，共添加 {} 个内容项", objectCount);
-        }
 
-        // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
-        SectPr lastSectPr = getPgSzSettings(docList.get(docList.size() - 1).getMainDocumentPart());
+            List<WordprocessingMLPackage> docList = new ArrayList<>();
+            for (String processedDocPath : processedDocPathList) {
+                WordprocessingMLPackage load = WordprocessingMLPackage.load(new File(processedDocPath));
+                docList.add(load);
+            }
 
-        // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
-        ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
-        P newSection = factory.createP();
+            // ✅ 1. 处理样式冲突（重命名 doc1 和 doc2 的样式）
+            for (int i = 0; i < docList.size(); i++) {
+                StyleRemapper.renameStyles(docList.get(i), "_DOC" + (i + 1));
+            }
 
-        PPr pPr = factory.createPPr();
-        // 深拷贝 sectPr，避免引用共享
-        SectPr sectPrCopy = (SectPr) XmlUtils.deepCopy(lastSectPr);
-        pPr.setSectPr(sectPrCopy);
-        newSection.setPPr(pPr);
+            // ✅ 2. 合并样式定义（在重命名之后合并样式）
+            mergeStyles(docList);
+            
+            // ✅ 3. 映射编号（避免列表编号混乱）
+            NumberingMapper.mapNumbering(docList);
 
-        // 使用 addObject() 添加，触发样式/字体等处理
-        main1.addObject(newSection);
-        logger.info("已添加doc2的节属性设置");
+            // ✅ 4. 复制图片、表格等资源（处理关系）
+            ResourceCopier.copyImages(docList);
 
-        // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
-        logger.info("开始修复对齐元素...");
-        fixJustificationElements(docList.get(0));
-        logger.info("对齐元素修复完成");
+            // 保存两个文档的格式信息（暂时保留但不处理表格边框）
+            logger.info("开始保存文档的格式信息...");
+            Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(docList);
+            logger.info("格式信息保存完成，共保存 {} 个属性", formatProperties.size());
 
+            // 在合并前应用默认字体大小
+            logger.info("开始在合并前应用默认字体大小...");
+            for (int i = 0; i < docList.size(); i++) {
+                applyDefaultFontSizesBeforeMerge(docList.get(i), formatProperties, "doc" + (i + 1));
+            }
+            logger.info("合并前默认字体大小应用完成");
 
-        // ✅ 12. 确保输出目录存在
-        File output = new File(outputPath);
-        if (!output.getParentFile().exists()) {
-            output.getParentFile().mkdirs();
-        }
+            // ✅ 6. 保存第一个文档的节属性设置
+            MainDocumentPart main1 = docList.get(0).getMainDocumentPart();
+            SectPr firstDocSectPr = getPgSzSettings(main1);
+            
+            // ✅ 7. 移除文档网格设置
+            for (WordprocessingMLPackage doc : docList) {
+                removeDocumentGridSettings(doc);
+            }
 
-        // ✅ 13. 保存文档
-        docList.get(0).save(output);
-        logger.info("文档已成功合并并保存到: {}", outputPath);
-        
-        // 清理临时文件
-        for (String s : processedDocPathList) {
-            Files.deleteIfExists(Paths.get(s));
+            // ✅ 9. 将 doc2 的所有内容追加到 doc1
+            // 使用 addObject() 以触发样式/字体发现
+            for (int i = 1; i < docList.size(); i++) {
+                // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
+                P sectionBreak = getSectionBreak(docList.get(i - 1).getMainDocumentPart());
+                main1.addObject(sectionBreak);
+                MainDocumentPart tempMain = docList.get(i).getMainDocumentPart();
+                logger.info("开始合并文档内容，doc内容项数: {}", tempMain.getContent().size());
+                int objectCount = 0;
+                for (Object obj : tempMain.getContent()) {
+                    objectCount++;
+                    logger.debug("正在添加第 {} 个内容项: {}", objectCount, obj.getClass().getSimpleName());
+                    main1.addObject(obj);
+                }
+                logger.info("文档内容合并完成，共添加 {} 个内容项", objectCount);
+            }
+
+            // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
+            SectPr lastSectPr = getPgSzSettings(docList.get(docList.size() - 1).getMainDocumentPart());
+
+            // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
+            ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
+            P newSection = factory.createP();
+
+            PPr pPr = factory.createPPr();
+            // 深拷贝 sectPr，避免引用共享
+            SectPr sectPrCopy = (SectPr) XmlUtils.deepCopy(lastSectPr);
+            pPr.setSectPr(sectPrCopy);
+            newSection.setPPr(pPr);
+
+            // 使用 addObject() 添加，触发样式/字体等处理
+            main1.addObject(newSection);
+            logger.info("已添加doc2的节属性设置");
+
+            // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
+            logger.info("开始修复对齐元素...");
+            fixJustificationElements(docList.get(0));
+            logger.info("对齐元素修复完成");
+
+            // ✅ 12. 确保输出目录存在
+            File output = new File(outputPath);
+            if (!output.getParentFile().exists()) {
+                output.getParentFile().mkdirs();
+            }
+
+            // ✅ 13. 保存文档
+            docList.get(0).save(output);
+            logger.info("文档已成功合并并保存到: {}", outputPath);
+            
+            // 清理临时文件
+            for (String s : processedDocPathList) {
+                Files.deleteIfExists(Paths.get(s));
+            }
+            
+            LoggerUtil.logMethodExit(logger, "mergeList", "合并完成");
+        } catch (Exception e) {
+            LoggerUtil.logMethodException(logger, "mergeList", e);
+            throw e;
         }
     }
 

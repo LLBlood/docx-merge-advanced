@@ -3,8 +3,8 @@ package cn.liulin.docx.example;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.XmlUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.List;
@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * @version 1.0
  */
 public class TableFormatPreserver {
-    private static final Logger logger = LogManager.getLogger(TableFormatPreserver.class);
+    private static final Logger logger = LoggerFactory.getLogger(TableFormatPreserver.class);
 
     /**
      * 在文档合并前保存两个文档的格式信息
