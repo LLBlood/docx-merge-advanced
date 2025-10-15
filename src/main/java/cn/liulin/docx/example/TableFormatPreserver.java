@@ -5,6 +5,7 @@ import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.XmlUtils;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.regex.Matcher;
@@ -18,6 +19,85 @@ import java.util.regex.Pattern;
  * @version 1.0
  */
 public class TableFormatPreserver {
+
+    /**
+     * 在文档合并前保存两个文档的格式信息
+     *
+     * @param docPath doc1文档
+     * @return 包含两个文档格式信息的映射
+     */
+    public static Map<String, String> saveDocumentFormat(List<WordprocessingMLPackage> docPath) {
+        Map<String, String> formatProperties = new HashMap<>();
+
+        try {
+            System.out.println("🔍 开始保存文档的格式信息...");
+            for (int i = 0; i < docPath.size(); i++) {
+                // 直接使用docx4j API获取XML内容
+                WordprocessingMLPackage doc = docPath.get(i);
+                String docXmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
+                System.out.println("🔍 开始保存doc格式信息，XML长度: " + docXmlContent.length());
+                // 获取样式XML内容
+                String docStyleXmlContent = "";
+                StyleDefinitionsPart stylePart = doc.getMainDocumentPart().getStyleDefinitionsPart();
+                if (stylePart != null) {
+                    docStyleXmlContent = XmlUtils.marshaltoString(stylePart.getJaxbElement(), true, true);
+                    System.out.println("🎨 doc1样式XML内容长度: " + docStyleXmlContent.length());
+                }
+
+                // 保存doc1的所有trHeight元素属性
+                Pattern trHeightPattern = Pattern.compile("<w:trHeight\\s+([^>]*w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+                Matcher matcher = trHeightPattern.matcher(docXmlContent);
+                int docIndex = 0;
+                while (matcher.find()) {
+                    String fullAttrs = matcher.group(1);
+                    String heightValue = matcher.group(2);
+                    formatProperties.put("doc" + (i + 1) + "_trHeight_" + docIndex, heightValue);
+                    System.out.println("📊 保存doc表格行高[" + docIndex + "]: " + heightValue);
+                    docIndex++;
+                }
+
+                System.out.println("✅ doc表格行高信息保存完成，共保存 " + docIndex + " 个行高设置");
+
+                // 保存doc1的所有tbl元素属性
+                Pattern tblPattern = Pattern.compile("<w:tbl(?:\\s[^>]*)?>(.*?)</w:tbl>", Pattern.DOTALL);
+                matcher = tblPattern.matcher(docXmlContent);
+                int docTblIndex = 0;
+                while (matcher.find()) {
+                    String tblContent = matcher.group(0); // 包括<w:tbl>标签本身
+                    formatProperties.put("doc" + (i + 1) + "_tbl_" + docTblIndex, tblContent);
+                    System.out.println("📋 保存doc表格[" + docTblIndex + "]，长度: " + tblContent.length());
+                    docTblIndex++;
+                }
+                System.out.println("✅ doc表格属性信息保存完成，共保存 " + docTblIndex + " 个表格");
+
+                // 保存doc1的字体信息（从样式中获取默认字体）
+                saveDefaultStyleInfo(docStyleXmlContent, "doc" + (i + 1) , formatProperties);
+
+                // 保存doc1的段落缩进信息（特别是表格内的段落）
+                Pattern indentPattern = Pattern.compile("<w:ind\\s+([^>]+w:val\\s*=\\s*\"([^\"]+)\"[^>]*)/?>");
+                matcher = indentPattern.matcher(docXmlContent);
+
+                int docIndIndex = 0;
+                while (matcher.find()) {
+                    String fullAttrs = matcher.group(1);
+                    String indValue = matcher.group(2);
+                    formatProperties.put("doc" + (i + 1) + "_ind_" + docIndIndex, indValue);
+                    System.out.println("-indent- 保存doc段落缩进[" + docIndIndex + "]: " + indValue);
+                    docIndIndex++;
+                }
+
+                System.out.println("✅ doc段落缩进信息保存完成，共保存 " + docIndIndex + " 个缩进设置");
+            }
+
+            System.out.println("💾 格式信息保存完成，总共保存了 " + formatProperties.size() + " 个格式属性");
+
+        } catch (Exception e) {
+            System.err.println("⚠️ 保存文档格式信息时出错: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return formatProperties;
+    }
 
     /**
      * 在文档合并前保存两个文档的格式信息
