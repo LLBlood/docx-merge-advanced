@@ -1,4 +1,4 @@
-package cn.liulin.docx.example;
+package cn.liulin.docx.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory;
  * @author liulin
  */
 public class LoggerUtil {
-    // 项目基础包名
-    private static final String BASE_PACKAGE = "cn.liulin.docx.example";
+    /**
+     * 项目基础包名
+     */
+    private static final String BASE_PACKAGE = "cn.liulin.docx";
     
     /**
      * 获取指定类的Logger实例
@@ -62,7 +64,9 @@ public class LoggerUtil {
             StringBuilder sb = new StringBuilder(format);
             sb.append(" [参数: ");
             for (int i = 0; i < args.length; i++) {
-                if (i > 0) sb.append(", ");
+                if (i > 0) {
+                    sb.append(", ");
+                }
                 sb.append(args[i]);
             }
             sb.append("]");
@@ -84,7 +88,9 @@ public class LoggerUtil {
             if (params != null && params.length > 0) {
                 sb.append(", 参数: ");
                 for (int i = 0; i < params.length; i++) {
-                    if (i > 0) sb.append(", ");
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
                     sb.append(params[i]);
                 }
             }

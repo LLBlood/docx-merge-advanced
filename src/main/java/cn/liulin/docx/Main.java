@@ -1,4 +1,4 @@
-package cn.liulin.docx.example;
+package cn.liulin.docx;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,17 +19,14 @@ public class Main {
             String doc5Path = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\审验表.docx";
             String outputPath = "D:\\IdeaWorkSpace_Study\\docx-merge-advanced\\word\\3.docx";
 
-//            DocxMerger merger = new DocxMerger();
-//            merger.merge(doc1Path, doc2Path, outputPath);
             List<String> list = new ArrayList<>();
             list.add(doc1Path);
             list.add(doc2Path);
             list.add(doc3Path);
             list.add(doc4Path);
             list.add(doc5Path);
-            DocxMergerList docxMergerList = new DocxMergerList();
-            docxMergerList.mergeList(list, outputPath
-            );
+            DocxMerger docxMerger = new DocxMerger();
+            docxMerger.mergeList(list, outputPath);
 
             System.out.println("🎉 合并成功！输出文件: " + outputPath);
         } catch (Exception e) {

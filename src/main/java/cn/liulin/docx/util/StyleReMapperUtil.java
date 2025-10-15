@@ -1,4 +1,4 @@
-package cn.liulin.docx.example;
+package cn.liulin.docx.util;
 
 import org.docx4j.TraversalUtil;
 import org.docx4j.finders.ClassFinder;
@@ -16,10 +16,33 @@ import java.util.Map;
  * @version 1.0
  * @date 2025/10/11 14:38
  */
-public class StyleRemapper {
-    private static final Logger logger = LoggerFactory.getLogger(StyleRemapper.class);
+public class StyleReMapperUtil {
+    private static final Logger logger = LoggerFactory.getLogger(StyleReMapperUtil.class);
 
-    public static void renameStyles(WordprocessingMLPackage doc, String suffix) {
+    private static final String SUFFIX = "_DOC";
+
+    /**
+     * 为文档列表中的每个文档重命名样式，以避免在合并时出现样式冲突
+     * 该方法会遍历文档列表，为每个文档的样式添加唯一的后缀标识
+     * 
+     * @param docList 包含WordprocessingMLPackage对象的文档列表
+     */
+    public static void renameDocListStyles(List<WordprocessingMLPackage> docList) {
+        // 遍历文档列表，为每个文档的样式添加唯一后缀
+        for (int i = 0; i < docList.size(); i++) {
+            renameStyles(docList.get(i), SUFFIX + (i + 1));
+        }
+    }
+
+    /**
+     * 重命名文档中的所有样式ID，以避免在文档合并时出现样式冲突
+     * 该方法会遍历文档中的所有样式定义，并为每个样式ID添加指定的后缀，
+     * 同时更新所有引用这些样式的段落和表格元素
+     * 
+     * @param doc 要处理的Word文档对象
+     * @param suffix 要添加到样式ID后的后缀字符串
+     */
+    private static void renameStyles(WordprocessingMLPackage doc, String suffix) {
         Styles styles = doc.getMainDocumentPart().getStyleDefinitionsPart().getJaxbElement();
         // 样式ID映射
         Map<String, String> styleIdMap = new HashMap<>();

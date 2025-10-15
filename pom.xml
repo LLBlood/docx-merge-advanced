@@ -54,7 +54,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
         <configuration>
-          <mainClass>cn.liulin.docx.example.Main</mainClass>
+          <mainClass>cn.liulin.docx.Main</mainClass>
         </configuration>
       </plugin>
       <!-- 添加Maven Shade插件来创建fat JAR -->
@@ -71,7 +71,7 @@
             <configuration>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>cn.liulin.docx.example.Main</mainClass>
+                  <mainClass>cn.liulin.docx.Main</mainClass>
                 </transformer>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
               </transformers>
