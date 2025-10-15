@@ -6,6 +6,8 @@ import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.wml.Numbering.Num;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.math.BigInteger;
 import java.util.HashMap;
@@ -13,6 +15,7 @@ import java.util.Map;
 import java.util.List;
 
 public class NumberingMapper {
+    private static final Logger logger = LogManager.getLogger(NumberingMapper.class);
 
     /**
      * 将 doc2 的编号定义合并到 doc1，并重映射 numId 避免冲突
@@ -23,7 +26,7 @@ public class NumberingMapper {
 
             // 如果其中一个文档没有编号定义部分，则创建一个新的
             if (ndp1 == null) {
-                System.out.println("🆕 为文档1创建编号定义部分");
+                logger.info("为文档1创建编号定义部分");
                 ndp1 = new NumberingDefinitionsPart();
                 ndp1.setJaxbElement(new Numbering());
                 docPath.get(0).getMainDocumentPart().addTargetPart(ndp1);
@@ -46,7 +49,7 @@ public class NumberingMapper {
             for (int i = 1; i < docPath.size(); i++) {
                 NumberingDefinitionsPart tempNdp = docPath.get(i).getMainDocumentPart().getNumberingDefinitionsPart();
                 if (tempNdp == null) {
-                    System.out.println("⚠️ 文档2缺少编号定义部分，跳过编号映射");
+                    logger.warn("文档2缺少编号定义部分，跳过编号映射");
                     continue;
                 }
                 Numbering tempNumbering = tempNdp.getJaxbElement();
@@ -81,18 +84,17 @@ public class NumberingMapper {
                             BigInteger ref = ppr.getNumPr().getNumId().getVal();
                             if (ref != null && numIdMap.containsKey(ref)) {
                                 ppr.getNumPr().getNumId().setVal(numIdMap.get(ref));
-                                System.out.println("🔄 更新段落编号引用: " + ref + " -> " + numIdMap.get(ref));
+                                logger.info("更新段落编号引用: {} -> {}", ref, numIdMap.get(ref));
                             }
                         }
                     }
                 }
             }
 
-            System.out.println("✅ 编号映射完成，共处理 " + numIdMap.size() + " 个编号");
+            logger.info("编号映射完成，共处理 {} 个编号", numIdMap.size());
 
         } catch (Exception e) {
-            System.err.println("❌ 编号映射失败：");
-            e.printStackTrace();
+            logger.error("编号映射失败：", e);
         }
     }
 
@@ -106,14 +108,14 @@ public class NumberingMapper {
 
             // 如果其中一个文档没有编号定义部分，则创建一个新的
             if (ndp1 == null) {
-                System.out.println("🆕 为文档1创建编号定义部分");
+                logger.info("为文档1创建编号定义部分");
                 ndp1 = new NumberingDefinitionsPart();
                 ndp1.setJaxbElement(new Numbering());
                 doc1.getMainDocumentPart().addTargetPart(ndp1);
             }
             
             if (ndp2 == null) {
-                System.out.println("⚠️ 文档2缺少编号定义部分，跳过编号映射");
+                logger.warn("文档2缺少编号定义部分，跳过编号映射");
                 return;
             }
 
@@ -162,17 +164,16 @@ public class NumberingMapper {
                         BigInteger ref = ppr.getNumPr().getNumId().getVal();
                         if (ref != null && numIdMap.containsKey(ref)) {
                             ppr.getNumPr().getNumId().setVal(numIdMap.get(ref));
-                            System.out.println("🔄 更新段落编号引用: " + ref + " -> " + numIdMap.get(ref));
+                            logger.info("更新段落编号引用: {} -> {}", ref, numIdMap.get(ref));
                         }
                     }
                 }
             }
 
-            System.out.println("✅ 编号映射完成，共处理 " + numIdMap.size() + " 个编号");
+            logger.info("编号映射完成，共处理 {} 个编号", numIdMap.size());
 
         } catch (Exception e) {
-            System.err.println("❌ 编号映射失败：");
-            e.printStackTrace();
+            logger.error("编号映射失败：", e);
         }
     }
 }

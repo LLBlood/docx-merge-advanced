@@ -6,6 +6,8 @@ import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.wml.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -30,9 +32,10 @@ import java.util.zip.ZipOutputStream;
  * @date 2025/10/11 14:38
  */
 public class DocxMergerList {
+    private static final Logger logger = LogManager.getLogger(DocxMergerList.class);
 
     public void mergeList(List<String> docPathList, String outputPath) throws Exception {
-        System.out.println("🔄 开始合并文档...");
+        logger.info("开始合并文档...");
 
         // 在docx4j加载文档之前，预处理原始文档，替换不兼容标签
         List<String> processedDocPathList = new ArrayList<>();
@@ -62,16 +65,16 @@ public class DocxMergerList {
         ResourceCopier.copyImages(docList);
 
         // 保存两个文档的格式信息（暂时保留但不处理表格边框）
-        System.out.println("💾 开始保存文档的格式信息...");
+        logger.info("开始保存文档的格式信息...");
         Map<String, String> formatProperties = TableFormatPreserver.saveDocumentFormat(docList);
-        System.out.println("💾 格式信息保存完成，共保存 " + formatProperties.size() + " 个属性");
+        logger.info("格式信息保存完成，共保存 {} 个属性", formatProperties.size());
 
         // 在合并前应用默认字体大小
-        System.out.println("📐 开始在合并前应用默认字体大小...");
+        logger.info("开始在合并前应用默认字体大小...");
         for (int i = 0; i < docList.size(); i++) {
             applyDefaultFontSizesBeforeMerge(docList.get(i), formatProperties, "doc" + (i + 1));
         }
-        System.out.println("✅ 合并前默认字体大小应用完成");
+        logger.info("合并前默认字体大小应用完成");
 
         // ✅ 6. 保存第一个文档的节属性设置
         MainDocumentPart main1 = docList.get(0).getMainDocumentPart();
@@ -91,14 +94,14 @@ public class DocxMergerList {
             P sectionBreak = getSectionBreak(docList.get(i - 1).getMainDocumentPart());
             main1.addObject(sectionBreak);
             MainDocumentPart tempMain = docList.get(i).getMainDocumentPart();
-            System.out.println("📄 开始合并文档内容，doc内容项数: " + tempMain.getContent().size());
+            logger.info("开始合并文档内容，doc内容项数: {}", tempMain.getContent().size());
             int objectCount = 0;
             for (Object obj : tempMain.getContent()) {
                 objectCount++;
-                System.out.println("📑 正在添加第 " + objectCount + " 个内容项: " + obj.getClass().getSimpleName());
+                logger.debug("正在添加第 {} 个内容项: {}", objectCount, obj.getClass().getSimpleName());
                 main1.addObject(obj);
             }
-            System.out.println("✅ 文档内容合并完成，共添加 " + objectCount + " 个内容项");
+            logger.info("文档内容合并完成，共添加 {} 个内容项", objectCount);
         }
 
         // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
@@ -116,12 +119,12 @@ public class DocxMergerList {
 
         // 使用 addObject() 添加，触发样式/字体等处理
         main1.addObject(newSection);
-        System.out.println("✅ 已添加doc2的节属性设置");
+        logger.info("已添加doc2的节属性设置");
 
         // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
-        System.out.println("🔧 开始修复对齐元素...");
+        logger.info("开始修复对齐元素...");
         fixJustificationElements(docList.get(0));
-        System.out.println("🔧 对齐元素修复完成");
+        logger.info("对齐元素修复完成");
 
 
         // ✅ 12. 确保输出目录存在
@@ -132,7 +135,7 @@ public class DocxMergerList {
 
         // ✅ 13. 保存文档
         docList.get(0).save(output);
-        System.out.println("✅ 文档已成功合并并保存到: " + outputPath);
+        logger.info("文档已成功合并并保存到: {}", outputPath);
         
         // 清理临时文件
         for (String s : processedDocPathList) {
@@ -245,7 +248,7 @@ public class DocxMergerList {
                         if (!existingStyles.containsKey(styleId)) {
                             // 样式不存在，添加到第一个文档中
                             styles1.getStyle().add(tempStyle);
-                            System.out.println("➕ 添加样式: " + styleId);
+                            logger.info("添加样式: {}", styleId);
                         } else {
                             // 样式已存在，我们需要检查是否是重命名的样式
                             // 如果是重命名的样式（包含_DOC2后缀），则替换原始样式
@@ -259,22 +262,21 @@ public class DocxMergerList {
                                     int index = styles1.getStyle().indexOf(originalStyle);
                                     if (index >= 0) {
                                         styles1.getStyle().set(index, tempStyle);
-                                        System.out.println("🔄 替换样式: " + originalStyleId + " -> " + styleId);
+                                        logger.info("替换样式: {} -> {}", originalStyleId, styleId);
                                     }
                                 }
                             } else {
                                 // 保留第一个文档的样式定义
-                                System.out.println("🔁 保留已存在的样式: " + styleId);
+                                logger.info("保留已存在的样式: {}", styleId);
                             }
                         }
                     }
                 }
             }
             
-            System.out.println("✅ 样式合并完成");
+            logger.info("样式合并完成");
         } catch (Exception e) {
-            System.err.println("⚠️ 合并样式时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("合并样式时出错: {}", e.getMessage(), e);
         }
     }
 
@@ -285,7 +287,7 @@ public class DocxMergerList {
         try {
             // 直接使用docx4j API获取XML内容，不再需要通过ZIP方式读取
             String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
-            System.out.println("📄 docx4j读取的主文档XML内容长度: " + xmlContent.length());
+            logger.debug("docx4j读取的主文档XML内容长度: {}", xmlContent.length());
             
             // 使用replace方法修复所有缺失val属性的jc标签
             xmlContent = fixMissingValAttributes(xmlContent);
@@ -299,7 +301,7 @@ public class DocxMergerList {
             StyleDefinitionsPart stylePart = doc.getMainDocumentPart().getStyleDefinitionsPart();
             if (stylePart != null) {
                 String styleXmlContent = XmlUtils.marshaltoString(stylePart.getJaxbElement(), true, true);
-                System.out.println("📄 原始样式XML内容长度: " + styleXmlContent.length());
+                logger.debug("原始样式XML内容长度: {}", styleXmlContent.length());
                 
                 // 使用replace方法修复所有缺失val属性的jc标签
                 styleXmlContent = fixMissingValAttributes(styleXmlContent);
@@ -309,10 +311,9 @@ public class DocxMergerList {
                 stylePart.setJaxbElement(styles);
             }
             
-            System.out.println("✅ 对齐元素修复完成");
+            logger.info("对齐元素修复完成");
         } catch (Exception e) {
-            System.err.println("⚠️ 修复对齐元素时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("修复对齐元素时出错: {}", e.getMessage(), e);
         }
     }
     
@@ -320,13 +321,13 @@ public class DocxMergerList {
      * 修复XML中缺失val属性的jc元素
      */
     private String fixMissingValAttributes(String xmlContent) {
-        System.out.println("🔗 开始修复缺失val属性的对齐元素");
+        logger.debug("开始修复缺失val属性的对齐元素");
         
         // 使用replace方法修复所有缺失val属性的jc标签
         int beforeFix = xmlContent.length();
         xmlContent = xmlContent.replace("<w:jc/>", "<w:jc w:val=\"left\"/>");
         int afterFix = xmlContent.length();
-        System.out.println("🔗 修复缺失val属性的jc标签: " + (afterFix - beforeFix) + " 字符变化");
+        logger.debug("修复缺失val属性的jc标签: {} 字符变化", (afterFix - beforeFix));
             
         return xmlContent;
     }
@@ -368,7 +369,7 @@ public class DocxMergerList {
 
             return sectionBreakParagraph;
         } catch (Exception e) {
-            System.err.println("⚠️ 添加分节符时出错: " + e.getMessage());
+            logger.error("添加分节符时出错: {}", e.getMessage(), e);
         }
         return null;
     }
@@ -407,7 +408,7 @@ public class DocxMergerList {
      * @return 修复后的XML内容
      */
     private String removeParagraphSnapToGridSettings(String xmlContent) {
-        System.out.println("📐 开始移除段落中的对齐到网络设置（合并前处理）");
+        logger.debug("开始移除段落中的对齐到网络设置（合并前处理）");
         
         // 移除段落属性中的snapToGrid设置
         int beforeRemoval = xmlContent.length();
@@ -443,7 +444,7 @@ public class DocxMergerList {
             "");
         
         int afterRemoval = xmlContent.length();
-        System.out.println("📐 移除对齐到网络设置: " + (beforeRemoval - afterRemoval) + " 字符变化");
+        logger.debug("移除对齐到网络设置: {} 字符变化", (beforeRemoval - afterRemoval));
         
         return xmlContent;
     }
@@ -455,7 +456,7 @@ public class DocxMergerList {
      */
     private void removeDocumentGridSettings(WordprocessingMLPackage doc) {
         try {
-            System.out.println("📐 开始移除文档网格设置");
+            logger.debug("开始移除文档网格设置");
             
             // 获取文档的body元素
             Document wmlDocument = doc.getMainDocumentPart().getJaxbElement();
@@ -464,16 +465,15 @@ public class DocxMergerList {
                 if (sectPr != null) {
                     // 移除文档网格设置
                     sectPr.setDocGrid(null);
-                    System.out.println("✅ 文档网格设置已移除");
+                    logger.info("文档网格设置已移除");
                 } else {
-                    System.out.println("⚠️ 未找到节属性设置");
+                    logger.warn("未找到节属性设置");
                 }
             } else {
-                System.out.println("⚠️ 未找到文档主体");
+                logger.warn("未找到文档主体");
             }
         } catch (Exception e) {
-            System.err.println("⚠️ 移除文档网格设置时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("移除文档网格设置时出错: {}", e.getMessage(), e);
         }
     }
     
@@ -483,7 +483,7 @@ public class DocxMergerList {
      */
     private void applyDefaultFontSizesBeforeMerge(WordprocessingMLPackage doc, Map<String, String> formatProperties, String docPrefix) {
         try {
-            System.out.println("📏 开始为" + docPrefix + "应用默认字体大小...");
+            logger.info("开始为{}应用默认字体大小...", docPrefix);
             
             // 获取文档的XML内容
             String xmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
@@ -496,11 +496,11 @@ public class DocxMergerList {
             String effectiveSize = defaultSize != null ? defaultSize : defaultStyleSize;
             String effectiveSizeCs = defaultStyleSizeCs; // 只有在使用默认样式时才有
             
-            System.out.println("📏 " + docPrefix + "默认字体大小: " + effectiveSize + 
+            logger.info("{}默认字体大小: {} {}", docPrefix, effectiveSize, 
                 (effectiveSizeCs != null ? " (szCs: " + effectiveSizeCs + ")" : ""));
             
             if (effectiveSize == null) {
-                System.out.println("⚠️ " + docPrefix + "没有找到默认字体大小，跳过处理");
+                logger.warn("{}没有找到默认字体大小，跳过处理", docPrefix);
                 return;
             }
             
@@ -528,7 +528,7 @@ public class DocxMergerList {
                     // 在<w:rPr>中插入字体大小定义
                     String modifiedRPrContent = rPrContent + fontSizeDefinition.toString();
                     matcher.appendReplacement(sb, rStart + modifiedRPrContent + rPrEnd);
-                    System.out.println("📏 为" + docPrefix + "运行元素添加默认字体大小: " + effectiveSize +
+                    logger.debug("为{}运行元素添加默认字体大小: {} {}", docPrefix, effectiveSize,
                         (effectiveSizeCs != null ? " (szCs: " + effectiveSizeCs + ")" : ""));
                 } else {
                     matcher.appendReplacement(sb, matcher.group(0));
@@ -542,10 +542,9 @@ public class DocxMergerList {
             Document document = (Document) XmlUtils.unmarshalString(result);
             doc.getMainDocumentPart().setJaxbElement(document);
             
-            System.out.println("✅ " + docPrefix + "默认字体大小应用完成");
+            logger.info("{}默认字体大小应用完成", docPrefix);
         } catch (Exception e) {
-            System.err.println("⚠️ 为" + docPrefix + "应用默认字体大小时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("为{}应用默认字体大小时出错: {}", docPrefix, e.getMessage(), e);
         }
     }
 }

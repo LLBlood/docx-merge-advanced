@@ -3,6 +3,8 @@ package cn.liulin.docx.example;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.XmlUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.util.List;
@@ -19,6 +21,7 @@ import java.util.regex.Pattern;
  * @version 1.0
  */
 public class TableFormatPreserver {
+    private static final Logger logger = LogManager.getLogger(TableFormatPreserver.class);
 
     /**
      * 在文档合并前保存两个文档的格式信息
@@ -30,18 +33,18 @@ public class TableFormatPreserver {
         Map<String, String> formatProperties = new HashMap<>();
 
         try {
-            System.out.println("🔍 开始保存文档的格式信息...");
+            logger.info("开始保存文档的格式信息...");
             for (int i = 0; i < docPath.size(); i++) {
                 // 直接使用docx4j API获取XML内容
                 WordprocessingMLPackage doc = docPath.get(i);
                 String docXmlContent = XmlUtils.marshaltoString(doc.getMainDocumentPart().getJaxbElement(), true, true);
-                System.out.println("🔍 开始保存doc格式信息，XML长度: " + docXmlContent.length());
+                logger.debug("开始保存doc格式信息，XML长度: {}", docXmlContent.length());
                 // 获取样式XML内容
                 String docStyleXmlContent = "";
                 StyleDefinitionsPart stylePart = doc.getMainDocumentPart().getStyleDefinitionsPart();
                 if (stylePart != null) {
                     docStyleXmlContent = XmlUtils.marshaltoString(stylePart.getJaxbElement(), true, true);
-                    System.out.println("🎨 doc1样式XML内容长度: " + docStyleXmlContent.length());
+                    logger.debug("doc1样式XML内容长度: {}", docStyleXmlContent.length());
                 }
 
                 // 保存doc1的所有trHeight元素属性
@@ -52,11 +55,11 @@ public class TableFormatPreserver {
                     String fullAttrs = matcher.group(1);
                     String heightValue = matcher.group(2);
                     formatProperties.put("doc" + (i + 1) + "_trHeight_" + docIndex, heightValue);
-                    System.out.println("📊 保存doc表格行高[" + docIndex + "]: " + heightValue);
+                    logger.debug("保存doc表格行高[{}]: {}", docIndex, heightValue);
                     docIndex++;
                 }
 
-                System.out.println("✅ doc表格行高信息保存完成，共保存 " + docIndex + " 个行高设置");
+                logger.info("doc表格行高信息保存完成，共保存 {} 个行高设置", docIndex);
 
                 // 保存doc1的所有tbl元素属性
                 Pattern tblPattern = Pattern.compile("<w:tbl(?:\\s[^>]*)?>(.*?)</w:tbl>", Pattern.DOTALL);
@@ -65,10 +68,10 @@ public class TableFormatPreserver {
                 while (matcher.find()) {
                     String tblContent = matcher.group(0); // 包括<w:tbl>标签本身
                     formatProperties.put("doc" + (i + 1) + "_tbl_" + docTblIndex, tblContent);
-                    System.out.println("📋 保存doc表格[" + docTblIndex + "]，长度: " + tblContent.length());
+                    logger.debug("保存doc表格[{}]，长度: {}", docTblIndex, tblContent.length());
                     docTblIndex++;
                 }
-                System.out.println("✅ doc表格属性信息保存完成，共保存 " + docTblIndex + " 个表格");
+                logger.info("doc表格属性信息保存完成，共保存 {} 个表格", docTblIndex);
 
                 // 保存doc1的字体信息（从样式中获取默认字体）
                 saveDefaultStyleInfo(docStyleXmlContent, "doc" + (i + 1) , formatProperties);
@@ -82,18 +85,17 @@ public class TableFormatPreserver {
                     String fullAttrs = matcher.group(1);
                     String indValue = matcher.group(2);
                     formatProperties.put("doc" + (i + 1) + "_ind_" + docIndIndex, indValue);
-                    System.out.println("-indent- 保存doc段落缩进[" + docIndIndex + "]: " + indValue);
+                    logger.debug("保存doc段落缩进[{}]: {}", docIndIndex, indValue);
                     docIndIndex++;
                 }
 
-                System.out.println("✅ doc段落缩进信息保存完成，共保存 " + docIndIndex + " 个缩进设置");
+                logger.info("doc段落缩进信息保存完成，共保存 {} 个缩进设置", docIndIndex);
             }
 
-            System.out.println("💾 格式信息保存完成，总共保存了 " + formatProperties.size() + " 个格式属性");
+            logger.info("格式信息保存完成，总共保存了 {} 个格式属性", formatProperties.size());
 
         } catch (Exception e) {
-            System.err.println("⚠️ 保存文档格式信息时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("保存文档格式信息时出错: {}", e.getMessage(), e);
         }
 
         return formatProperties;
@@ -110,15 +112,15 @@ public class TableFormatPreserver {
         Map<String, String> formatProperties = new HashMap<>();
         
         try {
-            System.out.println("🔍 开始保存两个文档的格式信息...");
+            logger.info("开始保存两个文档的格式信息...");
             
             // 直接使用docx4j API获取XML内容
             String doc1XmlContent = XmlUtils.marshaltoString(doc1.getMainDocumentPart().getJaxbElement(), true, true);
-            System.out.println("🔍 开始保存doc1格式信息，XML长度: " + doc1XmlContent.length());
+            logger.debug("开始保存doc1格式信息，XML长度: {}", doc1XmlContent.length());
             
             // 直接使用docx4j API获取XML内容
             String doc2XmlContent = XmlUtils.marshaltoString(doc2.getMainDocumentPart().getJaxbElement(), true, true);
-            System.out.println("🔍 开始保存doc2格式信息，XML长度: " + doc2XmlContent.length());
+            logger.debug("开始保存doc2格式信息，XML长度: {}", doc2XmlContent.length());
             
             // 获取样式XML内容
             String doc1StyleXmlContent = "";
@@ -127,13 +129,13 @@ public class TableFormatPreserver {
             StyleDefinitionsPart stylePart1 = doc1.getMainDocumentPart().getStyleDefinitionsPart();
             if (stylePart1 != null) {
                 doc1StyleXmlContent = XmlUtils.marshaltoString(stylePart1.getJaxbElement(), true, true);
-                System.out.println("🎨 doc1样式XML内容长度: " + doc1StyleXmlContent.length());
+                logger.debug("doc1样式XML内容长度: {}", doc1StyleXmlContent.length());
             }
             
             StyleDefinitionsPart stylePart2 = doc2.getMainDocumentPart().getStyleDefinitionsPart();
             if (stylePart2 != null) {
                 doc2StyleXmlContent = XmlUtils.marshaltoString(stylePart2.getJaxbElement(), true, true);
-                System.out.println("🎨 doc2样式XML内容长度: " + doc2StyleXmlContent.length());
+                logger.debug("doc2样式XML内容长度: {}", doc2StyleXmlContent.length());
             }
             
             // 保存doc1的所有trHeight元素属性
@@ -145,11 +147,11 @@ public class TableFormatPreserver {
                 String fullAttrs = matcher.group(1);
                 String heightValue = matcher.group(2);
                 formatProperties.put("doc1_trHeight_" + doc1Index, heightValue);
-                System.out.println("📊 保存doc1表格行高[" + doc1Index + "]: " + heightValue);
+                logger.debug("保存doc1表格行高[{}]: {}", doc1Index, heightValue);
                 doc1Index++;
             }
             
-            System.out.println("✅ doc1表格行高信息保存完成，共保存 " + doc1Index + " 个行高设置");
+            logger.info("doc1表格行高信息保存完成，共保存 {} 个行高设置", doc1Index);
             
             // 提取doc2所有表格行高的信息
             matcher = trHeightPattern.matcher(doc2XmlContent);
@@ -159,11 +161,11 @@ public class TableFormatPreserver {
                 String fullAttrs = matcher.group(1);
                 String heightValue = matcher.group(2);
                 formatProperties.put("doc2_trHeight_" + doc2Index, heightValue);
-                System.out.println("📊 保存doc2表格行高[" + doc2Index + "]: " + heightValue);
+                logger.debug("保存doc2表格行高[{}]: {}", doc2Index, heightValue);
                 doc2Index++;
             }
             
-            System.out.println("✅ doc2表格行高信息保存完成，共保存 " + doc2Index + " 个行高设置");
+            logger.info("doc2表格行高信息保存完成，共保存 {} 个行高设置", doc2Index);
             
             // 保存doc1的所有tbl元素属性
             Pattern tblPattern = Pattern.compile("<w:tbl(?:\\s[^>]*)?>(.*?)</w:tbl>", Pattern.DOTALL);
@@ -173,11 +175,11 @@ public class TableFormatPreserver {
             while (matcher.find()) {
                 String tblContent = matcher.group(0); // 包括<w:tbl>标签本身
                 formatProperties.put("doc1_tbl_" + doc1TblIndex, tblContent);
-                System.out.println("📋 保存doc1表格[" + doc1TblIndex + "]，长度: " + tblContent.length());
+                logger.debug("保存doc1表格[{}]，长度: {}", doc1TblIndex, tblContent.length());
                 doc1TblIndex++;
             }
             
-            System.out.println("✅ doc1表格属性信息保存完成，共保存 " + doc1TblIndex + " 个表格");
+            logger.info("doc1表格属性信息保存完成，共保存 {} 个表格", doc1TblIndex);
             
             // 保存doc2的所有tbl元素属性
             matcher = tblPattern.matcher(doc2XmlContent);
@@ -186,11 +188,11 @@ public class TableFormatPreserver {
             while (matcher.find()) {
                 String tblContent = matcher.group(0); // 包括<w:tbl>标签本身
                 formatProperties.put("doc2_tbl_" + doc2TblIndex, tblContent);
-                System.out.println("📋 保存doc2表格[" + doc2TblIndex + "]，长度: " + tblContent.length());
+                logger.debug("保存doc2表格[{}]，长度: {}", doc2TblIndex, tblContent.length());
                 doc2TblIndex++;
             }
             
-            System.out.println("✅ doc2表格属性信息保存完成，共保存 " + doc2TblIndex + " 个表格");
+            logger.info("doc2表格属性信息保存完成，共保存 {} 个表格", doc2TblIndex);
             
             // 保存doc1的字体信息（从样式中获取默认字体）
             saveDefaultStyleInfo(doc1StyleXmlContent, "doc1", formatProperties);
@@ -207,11 +209,11 @@ public class TableFormatPreserver {
                 String fullAttrs = matcher.group(1);
                 String indValue = matcher.group(2);
                 formatProperties.put("doc1_ind_" + doc1IndIndex, indValue);
-                System.out.println("-indent- 保存doc1段落缩进[" + doc1IndIndex + "]: " + indValue);
+                logger.debug("保存doc1段落缩进[{}]: {}", doc1IndIndex, indValue);
                 doc1IndIndex++;
             }
             
-            System.out.println("✅ doc1段落缩进信息保存完成，共保存 " + doc1IndIndex + " 个缩进设置");
+            logger.info("doc1段落缩进信息保存完成，共保存 {} 个缩进设置", doc1IndIndex);
             
             // 保存doc2的段落缩进信息（特别是表格内的段落）
             matcher = indentPattern.matcher(doc2XmlContent);
@@ -221,17 +223,16 @@ public class TableFormatPreserver {
                 String fullAttrs = matcher.group(1);
                 String indValue = matcher.group(2);
                 formatProperties.put("doc2_ind_" + doc2IndIndex, indValue);
-                System.out.println("-indent- 保存doc2段落缩进[" + doc2IndIndex + "]: " + indValue);
+                logger.debug("保存doc2段落缩进[{}]: {}", doc2IndIndex, indValue);
                 doc2IndIndex++;
             }
             
-            System.out.println("✅ doc2段落缩进信息保存完成，共保存 " + doc2IndIndex + " 个缩进设置");
+            logger.info("doc2段落缩进信息保存完成，共保存 {} 个缩进设置", doc2IndIndex);
             
-            System.out.println("💾 格式信息保存完成，总共保存了 " + formatProperties.size() + " 个格式属性");
+            logger.info("格式信息保存完成，总共保存了 {} 个格式属性", formatProperties.size());
             
         } catch (Exception e) {
-            System.err.println("⚠️ 保存文档格式信息时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("保存文档格式信息时出错: {}", e.getMessage(), e);
         }
         
         return formatProperties;
@@ -270,8 +271,8 @@ public class TableFormatPreserver {
                     formatProperties.put(docPrefix + "_default_style_font_hAnsiTheme", hAnsiTheme);
                     formatProperties.put(docPrefix + "_default_style_font_eastAsiaTheme", eastAsiaTheme);
                     
-                    System.out.println("🔤 保存" + docPrefix + "默认样式(Normal)字体主题: asciiTheme=" + asciiTheme + 
-                        ", hAnsiTheme=" + hAnsiTheme + ", eastAsiaTheme=" + eastAsiaTheme);
+                    logger.info("保存{}默认样式(Normal)字体主题: asciiTheme={}, hAnsiTheme={}, eastAsiaTheme={}", 
+                        docPrefix, asciiTheme, hAnsiTheme, eastAsiaTheme);
                 }
                 
                 // 提取字体大小信息
@@ -282,7 +283,7 @@ public class TableFormatPreserver {
                     String fullAttrs = sizeMatcher.group(1);
                     String szValue = sizeMatcher.group(2);
                     formatProperties.put(docPrefix + "_default_style_sz", szValue);
-                    System.out.println("📏 保存" + docPrefix + "默认样式(Normal)字体大小: " + szValue);
+                    logger.info("保存{}默认样式(Normal)字体大小: {}", docPrefix, szValue);
                 }
                 
                 // 提取复杂字体大小信息
@@ -293,12 +294,11 @@ public class TableFormatPreserver {
                     String fullAttrs = sizeCsMatcher.group(1);
                     String szCsValue = sizeCsMatcher.group(2);
                     formatProperties.put(docPrefix + "_default_style_szCs", szCsValue);
-                    System.out.println("📏 保存" + docPrefix + "默认样式(Normal)复杂字体大小: " + szCsValue);
+                    logger.info("保存{}默认样式(Normal)复杂字体大小: {}", docPrefix, szCsValue);
                 }
             }
         } catch (Exception e) {
-            System.err.println("⚠️ 保存默认样式信息时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("保存默认样式信息时出错: {}", e.getMessage(), e);
         }
     }
     
@@ -316,7 +316,7 @@ public class TableFormatPreserver {
             if (stylePart1 != null) {
                 String style1Xml = XmlUtils.marshaltoString(stylePart1.getJaxbElement(), true, true);
                 formatProperties.put("doc1_styles", style1Xml);
-                System.out.println("🎨 保存doc1样式信息，XML长度: " + style1Xml.length());
+                logger.debug("保存doc1样式信息，XML长度: {}", style1Xml.length());
             }
             
             // 保存doc2的样式信息
@@ -324,11 +324,10 @@ public class TableFormatPreserver {
             if (stylePart2 != null) {
                 String style2Xml = XmlUtils.marshaltoString(stylePart2.getJaxbElement(), true, true);
                 formatProperties.put("doc2_styles", style2Xml);
-                System.out.println("🎨 保存doc2样式信息，XML长度: " + style2Xml.length());
+                logger.debug("保存doc2样式信息，XML长度: {}", style2Xml.length());
             }
         } catch (Exception e) {
-            System.err.println("⚠️ 保存样式信息时出错: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("保存样式信息时出错: {}", e.getMessage(), e);
         }
     }
 }

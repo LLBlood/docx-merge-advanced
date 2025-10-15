@@ -4,6 +4,8 @@ import org.docx4j.TraversalUtil;
 import org.docx4j.finders.ClassFinder;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.wml.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.HashMap;
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.Map;
  * @date 2025/10/11 14:38
  */
 public class StyleRemapper {
+    private static final Logger logger = LogManager.getLogger(StyleRemapper.class);
 
     public static void renameStyles(WordprocessingMLPackage doc, String suffix) {
         Styles styles = doc.getMainDocumentPart().getStyleDefinitionsPart().getJaxbElement();
@@ -60,7 +63,7 @@ public class StyleRemapper {
                         if (oldStyleId != null && styleIdMap.containsKey(oldStyleId)) {
                             String newStyleId = styleIdMap.get(oldStyleId);
                             pStyle.setVal(newStyleId);
-                            System.out.println("🔄 更新段落样式引用: " + oldStyleId + " -> " + newStyleId);
+                            logger.info("更新段落样式引用: {} -> {}", oldStyleId, newStyleId);
                         }
                     }
                 }
@@ -94,7 +97,7 @@ public class StyleRemapper {
                     if (oldStyleId != null && styleIdMap.containsKey(oldStyleId)) {
                         String newStyleId = styleIdMap.get(oldStyleId);
                         tblStyle.setVal(newStyleId);
-                        System.out.println("🔄 更新表格样式引用 (ID映射): " + oldStyleId + " -> " + newStyleId);
+                        logger.info("更新表格样式引用 (ID映射): {} -> {}", oldStyleId, newStyleId);
                     }
                 }
             }
