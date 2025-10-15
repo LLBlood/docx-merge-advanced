@@ -82,12 +82,14 @@ public class DocxMergerList {
             removeDocumentGridSettings(doc);
         }
 
-        // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
-        addSectionBreak(main1);
+
 
         // ✅ 9. 将 doc2 的所有内容追加到 doc1
         // 使用 addObject() 以触发样式/字体发现
         for (int i = 1; i < docList.size(); i++) {
+            // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
+            P sectionBreak = getSectionBreak(docList.get(i - 1).getMainDocumentPart());
+            main1.addObject(sectionBreak);
             MainDocumentPart tempMain = docList.get(i).getMainDocumentPart();
             System.out.println("📄 开始合并文档内容，doc内容项数: " + tempMain.getContent().size());
             int objectCount = 0;
@@ -99,56 +101,28 @@ public class DocxMergerList {
             System.out.println("✅ 文档内容合并完成，共添加 " + objectCount + " 个内容项");
         }
 
+        // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
+        SectPr lastSectPr = getPgSzSettings(docList.get(docList.size() - 1).getMainDocumentPart());
+
+        // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
+        ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
+        P newSection = factory.createP();
+
+        PPr pPr = factory.createPPr();
+        // 深拷贝 sectPr，避免引用共享
+        SectPr sectPrCopy = (SectPr) XmlUtils.deepCopy(lastSectPr);
+        pPr.setSectPr(sectPrCopy);
+        newSection.setPPr(pPr);
+
+        // 使用 addObject() 添加，触发样式/字体等处理
+        main1.addObject(newSection);
+        System.out.println("✅ 已添加doc2的节属性设置");
 
         // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
         System.out.println("🔧 开始修复对齐元素...");
         fixJustificationElements(docList.get(0));
         System.out.println("🔧 对齐元素修复完成");
 
-        // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
-        SectPr lastSectPr = findLastSctPr(docList.get(docList.size() - 1).getMainDocumentPart());
-        
-        // 如果找不到最后一个节属性，则尝试获取文档默认的节属性
-        if (lastSectPr == null) {
-            lastSectPr = getPgSzSettings(docList.get(docList.size() - 1).getMainDocumentPart());
-        }
-
-        // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
-        if (lastSectPr != null) {
-            ObjectFactory factory = Context.getWmlObjectFactory();  // ✅ 正确方式
-            P newSection = factory.createP();
-
-            PPr pPr = factory.createPPr();
-            // 深拷贝 sectPr，避免引用共享
-            SectPr sectPrCopy = (SectPr) XmlUtils.deepCopy(lastSectPr);
-            pPr.setSectPr(sectPrCopy);
-            newSection.setPPr(pPr);
-
-            // 使用 addObject() 添加，触发样式/字体等处理
-            main1.addObject(newSection);
-            System.out.println("✅ 已添加doc2的节属性设置");
-        } else if (firstDocSectPr != null) {
-            // 如果 doc2 没有节属性，但第一个文档有，则使用第一个文档的节属性
-            ObjectFactory factory = Context.getWmlObjectFactory();
-            P newSection = factory.createP();
-            PPr pPr = factory.createPPr();
-            // 深拷贝 sectPr，避免引用共享
-            SectPr sectPrCopy = (SectPr) XmlUtils.deepCopy(firstDocSectPr);
-            pPr.setSectPr(sectPrCopy);
-            newSection.setPPr(pPr);
-            main1.addObject(newSection);
-            System.out.println("✅ 已添加第一个文档的节属性设置");
-        } else {
-            // 如果都没有节属性，则添加一个默认的节属性来保持页面设置
-            ObjectFactory factory = Context.getWmlObjectFactory();
-            P newSection = factory.createP();
-            PPr pPr = factory.createPPr();
-            SectPr sectPr = factory.createSectPr();
-            pPr.setSectPr(sectPr);
-            newSection.setPPr(pPr);
-            main1.addObject(newSection);
-            System.out.println("✅ 已添加默认节属性设置");
-        }
 
         // ✅ 12. 确保输出目录存在
         File output = new File(outputPath);
@@ -165,6 +139,7 @@ public class DocxMergerList {
             Files.deleteIfExists(Paths.get(s));
         }
     }
+
 
     /**
      * 在docx4j加载前预处理文档，替换不兼容的标签
@@ -355,65 +330,60 @@ public class DocxMergerList {
     /**
      * 在第一个文档末尾添加分节符，确保第二个文档保持其原始页面设置
      */
-    private void addSectionBreak(MainDocumentPart main1) {
+    private P getSectionBreak(MainDocumentPart documentPart) {
         try {
             ObjectFactory factory = Context.getWmlObjectFactory();
             P sectionBreakParagraph = factory.createP();
             PPr pPr = factory.createPPr();
-            
+
             // 创建分节符
             SectPr sectPr = factory.createSectPr();
-            
+
             // 设置分节符类型为下一页（NEXT_PAGE）
             // 这样可以确保第二个文档从新的一页开始，并保持其原始页面设置
             SectPr.Type sectType = factory.createSectPrType();
             sectType.setVal("nextPage"); // 下一页分节符
             sectPr.setType(sectType);
-            
+
             // 保留第一个文档的页面设置
-            SectPr firstDocSectPr = getPgSzSettings(main1);
+            SectPr firstDocSectPr = getPgSzSettings(documentPart);
             if (firstDocSectPr != null) {
                 // 复制第一页的页面大小设置
                 if (firstDocSectPr.getPgSz() != null) {
                     sectPr.setPgSz(XmlUtils.deepCopy(firstDocSectPr.getPgSz()));
                 }
-                
+
                 // 复制第一页的页边距设置
                 if (firstDocSectPr.getPgMar() != null) {
                     sectPr.setPgMar(XmlUtils.deepCopy(firstDocSectPr.getPgMar()));
                 }
             }
-            
+
             pPr.setSectPr(sectPr);
             sectionBreakParagraph.setPPr(pPr);
-            
-            // 添加分节符段落到第一个文档末尾
-            main1.addObject(sectionBreakParagraph);
-            System.out.println("✅ 已添加分节符以保持页面设置独立");
+
+            return sectionBreakParagraph;
         } catch (Exception e) {
             System.err.println("⚠️ 添加分节符时出错: " + e.getMessage());
         }
+        return null;
     }
 
     /**
      * 查找 MainDocumentPart 中最后一个带有节属性的段落
      */
-    private SectPr findLastSctPr(MainDocumentPart part) {
+    private P findLastSctPr(MainDocumentPart part) {
         List<Object> content = part.getContent();
         // 从后往前找
         for (int i = content.size() - 1; i >= 0; i--) {
             Object obj = content.get(i);
             if (obj instanceof P) {
-                P p = (P) obj;
-                PPr ppr = p.getPPr();
-                if (ppr != null && ppr.getSectPr() != null) {
-                    return ppr.getSectPr();
-                }
+                return (P) obj;
             }
         }
         return null;
     }
-    
+
     /**
      * 获取文档的页面设置（页面大小和方向）
      */
