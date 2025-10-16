@@ -1,67 +1,73 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>cn.liulin</groupId>
   <artifactId>docx-merge-advanced</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>0.0.1-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>docx-merge-advanced</name>
+  <name>docx-merge-isolated</name>
   <url>http://maven.apache.org</url>
 
   <properties>
     <maven.compiler.source>8</maven.compiler.source>
     <maven.compiler.target>8</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- 插件版本 -->
+    <maven-shade-plugin.version>3.5.0</maven-shade-plugin.version>
+    <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
   </properties>
 
   <dependencies>
+    <!-- docx4j 核心：JAXB 内部实现 -->
     <dependency>
       <groupId>org.docx4j</groupId>
       <artifactId>docx4j-JAXB-Internal</artifactId>
       <version>8.3.15</version>
     </dependency>
-    <!-- 使用SLF4J API作为日志门面 -->
+
+    <!-- commons-compress -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+      <version>1.28.0</version>
+    </dependency>
+
+    <!-- SLF4J 日志门面 -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>1.7.36</version>
     </dependency>
-    <!-- 在运行时提供一个简单的实现，但不强制依赖 -->
+
+    <!-- SLF4J 简单实现（可选，runtime） -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>1.7.36</version>
       <scope>runtime</scope>
-      <optional>true</optional>
     </dependency>
   </dependencies>
 
   <build>
     <plugins>
+      <!-- 编译插件 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
+        <version>${maven-compiler-plugin.version}</version>
         <configuration>
-          <source>8</source>
-          <target>8</target>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
         </configuration>
       </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.1.0</version>
-        <configuration>
-          <mainClass>cn.liulin.docx.Main</mainClass>
-        </configuration>
-      </plugin>
-      <!-- 添加Maven Shade插件来创建fat JAR -->
+
+      <!-- 🔥 关键：使用 maven-shade-plugin 打 fat jar，但不重命名！ -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.2.4</version>
+        <version>${maven-shade-plugin.version}</version>
         <executions>
           <execution>
             <phase>package</phase>
@@ -69,13 +75,15 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <!-- 输出为 fat.jar -->
+              <finalName>docx-merge-${project.version}-fat</finalName>
+
+              <!-- 🔥 只保留这一个 transformer：合并 SPI -->
               <transformers>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>cn.liulin.docx.Main</mainClass>
-                </transformer>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
               </transformers>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
+
+              <!-- 排除签名文件 -->
               <filters>
                 <filter>
                   <artifact>*:*</artifact>
