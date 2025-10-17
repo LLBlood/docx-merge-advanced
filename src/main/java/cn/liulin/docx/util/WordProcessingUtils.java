@@ -90,46 +90,113 @@ public class WordProcessingUtils {
      * @param docList 包含WordprocessingMLPackage对象的文档列表
      */
     public static void addDocListToBase(MainDocumentPart main1, List<WordprocessingMLPackage> docList) {
-        // 使用 addObject() 以触发样式/字体发现
-        // 遍历文档列表，将除第一个文档外的所有文档内容追加到基础文档中
-        for (int i = 1; i < docList.size(); i++) {
-            // ✅ 8. 在合并前添加分节符，保持文档页面设置独立
-            P sectionBreak = getSectionBreak(docList.get(i - 1).getMainDocumentPart());
-            main1.addObject(sectionBreak);
-            MainDocumentPart tempMain = docList.get(i).getMainDocumentPart();
-            logger.info("开始合并文档内容，doc内容项数: {}", tempMain.getContent().size());
-            int objectCount = 0;
-            for (Object obj : tempMain.getContent()) {
-                objectCount++;
-                logger.debug("正在添加第 {} 个内容项: {}", objectCount, obj.getClass().getSimpleName());
-                main1.addObject(obj);
+        // 如果是第一个word，则获取word的body的SectPr属性
+        // 删除第一个word的body的SectPr属性
+        // 获取第一个word最后一个content的内容，将内容的分节属性设置为body的SectPr属性
+        // 如果不是最后一个word，则获取word的body的SectPr属性
+        // 获取word的最后一个content的内容，将内容的分节属性设置为body的SectPr属性
+        // 如果是最后一个word，则获取word的body的SectPr属性
+        // 将第一个word的body设置为最后一个word的body的SectPr属性
+        for (int i = 0; i < docList.size(); i++) {
+            WordprocessingMLPackage wordprocessingMLPackage = docList.get(i);
+            MainDocumentPart mainDocumentPart = wordprocessingMLPackage.getMainDocumentPart();
+            if (i == 0) {
+                // 保存第一个文档的节设置
+                SectPr firstDocSectPr = getPgSzSettings(mainDocumentPart);
+                // 删除第一个word的body的SectPr属性
+                Document wmlDocument = mainDocumentPart.getJaxbElement();
+                if (wmlDocument != null && wmlDocument.getBody() != null) {
+                    wmlDocument.getBody().setSectPr(null);
+                    logger.debug("已移除文档的节属性设置");
+                }
+                // 获取第一个word最后一个content的内容，将内容的分节属性设置为body的SectPr属性
+                List<Object> content = wmlDocument.getBody().getContent();
+                Object o = content.get(content.size() - 1);
+                if (o instanceof P) {
+                    P p = (P) o;
+                    PPr pPr = p.getPPr();
+                    if (pPr == null) {
+                        p.setPPr(createSectionPPr(firstDocSectPr));
+                    } else {
+                        p.getPPr().setSectPr(firstDocSectPr);
+                    }
+                } else {
+                    P sectionParagraph = createSectionParagraph(firstDocSectPr);
+                    content.add(sectionParagraph);
+                }
+            } else if (i == docList.size() - 1) {
+                // 如果是最后一个word，则获取word的body的SectPr属性
+                SectPr docSectPr = getPgSzSettings(mainDocumentPart);
+                // 将第一个word的body设置为最后一个word的body的SectPr属性
+                Body body = main1.getJaxbElement().getBody();
+                body.setSectPr(docSectPr);
+                for (Object o : mainDocumentPart.getJaxbElement().getContent()) {
+                    main1.addObject(o);
+                }
+            } else {
+                // 如果不是最后一个word，则获取word的body的SectPr属性
+                SectPr docSectPr = getPgSzSettings(mainDocumentPart);
+                // 获取word的最后一个content的内容，将内容的分节属性设置为body的SectPr属性
+                List<Object> content = mainDocumentPart.getJaxbElement().getBody().getContent();
+                Object lastContent = content.get(content.size() - 1);
+                if (lastContent instanceof P) {
+                    P p = (P) lastContent;
+                    PPr pPr = p.getPPr();
+                    if (pPr == null) {
+                        p.setPPr(createSectionPPr(docSectPr));
+                    } else {
+                        p.getPPr().setSectPr(docSectPr);
+                    }
+                } else {
+                    P sectionParagraph = createSectionParagraph(docSectPr);
+                    content.add(sectionParagraph);
+                }
+                for (Object co : content) {
+                    main1.addObject(co);
+                }
             }
-            logger.info("文档内容合并完成，共添加 {} 个内容项", objectCount);
         }
-
-        // ✅ 10. 获取 doc2 的最后一个节属性（SectPr）
-        SectPr lastSectPr = getPgSzSettings(docList.get(docList.size() - 1).getMainDocumentPart());
-
-        // ✅ 11. 如果 doc2 有节结束（SectPr），则在合并后添加一个新节段落
-        ObjectFactory factory = Context.getWmlObjectFactory();
-        P newSection = factory.createP();
-
-        PPr pPr = factory.createPPr();
-        // 深拷贝 sectPr，避免引用共享
-        assert lastSectPr != null;
-        SectPr sectPrCopy = XmlUtils.deepCopy(lastSectPr);
-        pPr.setSectPr(sectPrCopy);
-        newSection.setPPr(pPr);
-
-        // 使用 addObject() 添加，触发样式/字体等处理
-        main1.addObject(newSection);
-
         // 修复对齐元素，确保符合Open XML规范（不处理表格边框）
         logger.info("开始修复对齐元素...");
         fixJustificationElements(docList.get(0));
         logger.info("对齐元素修复完成");
     }
 
+    /**
+     * 创建带有指定节设置的段落
+     * @param sectPr 节属性设置
+     * @return 包含节设置的段落
+     */
+    private static P createSectionParagraph(SectPr sectPr) {
+        ObjectFactory factory = Context.getWmlObjectFactory();
+        P sectionParagraph = factory.createP();
+        PPr pPr = factory.createPPr();
+        
+        // 深拷贝节属性，避免引用共享
+        SectPr sectPrCopy = XmlUtils.deepCopy(sectPr);
+        pPr.setSectPr(sectPrCopy);
+        sectionParagraph.setPPr(pPr);
+        
+        logger.debug("创建了带有节设置的段落");
+        return sectionParagraph;
+    }
+
+    /**
+     * 创建带有指定节设置的段落
+     * @param sectPr 节属性设置
+     * @return 包含节设置的段落
+     */
+    private static PPr createSectionPPr(SectPr sectPr) {
+        ObjectFactory factory = Context.getWmlObjectFactory();
+        PPr pPr = factory.createPPr();
+
+        // 深拷贝节属性，避免引用共享
+        SectPr sectPrCopy = XmlUtils.deepCopy(sectPr);
+        pPr.setSectPr(sectPrCopy);
+
+        logger.debug("创建了带有节设置的段落PPr");
+        return pPr;
+    }
 
     /**
      * 修复对齐元素，确保所有 jc 元素都有 val 属性
@@ -184,56 +251,17 @@ public class WordProcessingUtils {
     }
 
     /**
-     * 在第一个文档末尾添加分节符，确保第二个文档保持其原始页面设置
-     */
-    private static P getSectionBreak(MainDocumentPart documentPart) {
-        try {
-            ObjectFactory factory = Context.getWmlObjectFactory();
-            P sectionBreakParagraph = factory.createP();
-            PPr pPr = factory.createPPr();
-
-            // 创建分节符
-            SectPr sectPr = factory.createSectPr();
-
-            // 设置分节符类型为下一页（NEXT_PAGE）
-            // 这样可以确保第二个文档从新的一页开始，并保持其原始页面设置
-            SectPr.Type sectType = factory.createSectPrType();
-            // 下一页分节符
-            sectType.setVal("nextPage");
-            sectPr.setType(sectType);
-
-            // 保留第一个文档的页面设置
-            SectPr firstDocSectPr = getPgSzSettings(documentPart);
-            if (firstDocSectPr != null) {
-                // 复制第一页的页面大小设置
-                if (firstDocSectPr.getPgSz() != null) {
-                    sectPr.setPgSz(XmlUtils.deepCopy(firstDocSectPr.getPgSz()));
-                }
-
-                // 复制第一页的页边距设置
-                if (firstDocSectPr.getPgMar() != null) {
-                    sectPr.setPgMar(XmlUtils.deepCopy(firstDocSectPr.getPgMar()));
-                }
-            }
-
-            pPr.setSectPr(sectPr);
-            sectionBreakParagraph.setPPr(pPr);
-
-            return sectionBreakParagraph;
-        } catch (Exception e) {
-            logger.error("添加分节符时出错: {}", e.getMessage(), e);
-        }
-        return null;
-    }
-
-    /**
      * 获取文档的页面设置（页面大小和方向）
      */
     private static SectPr getPgSzSettings(MainDocumentPart part) {
         // 获取文档的body元素
         Document wmlDocument = part.getJaxbElement();
         if (wmlDocument != null && wmlDocument.getBody() != null) {
-            return wmlDocument.getBody().getSectPr();
+            SectPr sectPr = wmlDocument.getBody().getSectPr();
+            // 深拷贝节属性，避免引用共享
+            if (sectPr != null) {
+                return XmlUtils.deepCopy(sectPr);
+            }
         }
         return null;
     }
