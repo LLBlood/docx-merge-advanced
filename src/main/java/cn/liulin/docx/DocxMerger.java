@@ -100,8 +100,8 @@ public class DocxMerger {
             resultDoc = baseDoc;
         }
 
-        // 处理样式冲突
-        StyleReMapperUtil.renameDocListStyles(docList);
+        // 合并样式，以第一个文档的样式为基准
+        StyleReMapperUtil.mergeStyles(docList);
 
         // 映射编号（避免列表编号混乱）
         NumberingMapperUtil.mapNumbering(docList);
