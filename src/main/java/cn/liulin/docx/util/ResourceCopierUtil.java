@@ -2,9 +2,6 @@ package cn.liulin.docx.util;
 
 import org.docx4j.XmlUtils;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
-import org.docx4j.openpackaging.parts.Part;
-import org.docx4j.openpackaging.parts.PartName;
-import org.docx4j.openpackaging.parts.WordprocessingML.BinaryPartAbstractImage;
 import org.docx4j.openpackaging.parts.relationships.Namespaces;
 import org.docx4j.openpackaging.parts.relationships.RelationshipsPart;
 import org.docx4j.relationships.Relationship;
@@ -22,35 +19,38 @@ import java.util.Map;
  */
 public class ResourceCopierUtil {
     private static final Logger logger = LoggerUtil.getLogger(ResourceCopierUtil.class);
-
+    
     /**
-     * 复制文档列表中除第一个文档外的所有文档的图片资源到第一个文档中
-     * 该方法会遍历文档列表，将每个文档中的图片复制到第一个文档，并更新图片引用关系
+     * 保存图片引用路径，不直接复制图片
      * 
-     * @param docPath 包含WordprocessingMLPackage对象的文档列表，第一个文档作为目标文档
+     * @param docPath 包含WordprocessingMLPackage对象的文档列表
+     * @param imageReferences 图片引用映射集合
+     * @param imageCounter 图片计数器
+     * @return 更新后的图片计数器
      */
-    public static void copyImages(List<WordprocessingMLPackage> docPath) {
-        LoggerUtil.logMethodEntry(logger, "copyImages", docPath != null ? docPath.size() : 0);
+    public static int saveImageReferences(List<WordprocessingMLPackage> docPath, 
+                                          Map<String, Map<String, String>> imageReferences, 
+                                          int imageCounter) {
+        LoggerUtil.logMethodEntry(logger, "saveImageReferences", docPath != null ? docPath.size() : 0);
 
-        assert docPath != null;
-        WordprocessingMLPackage doc1 = docPath.get(0);
+        int updatedImageCounter = imageCounter;
+        Map<String, String> imageRelMap = new HashMap<>(100);
         try {
-            logger.info("开始复制图片资源...");
-            // 遍历除第一个文档外的所有文档，复制其中的图片资源
-            for (int i = 1; i < docPath.size(); i++) {
+            logger.info("开始保存图片引用路径...");
+            
+            // 遍历所有文档，保存图片引用路径
+            for (int i = 0; i < docPath.size(); i++) {
                 WordprocessingMLPackage tempDoc = docPath.get(i);
-                Map<String, String> imageRelMap = new HashMap<>();
-                RelationshipsPart relPart2 = tempDoc.getMainDocumentPart().getRelationshipsPart();
-                if (relPart2 == null) {
-                    logger.warn("文档没有关系部分，跳过图片复制");
+                RelationshipsPart relPart = tempDoc.getMainDocumentPart().getRelationshipsPart();
+                if (relPart == null) {
+                    logger.warn("文档没有关系部分，跳过图片引用保存");
                     continue;
                 }
 
-                List<Relationship> relationships = relPart2.getRelationships().getRelationship();
+                List<Relationship> relationships = relPart.getRelationships().getRelationship();
                 logger.debug("文档中共有 {} 个关系", relationships.size());
 
-                // 复制图片部件从doc到doc1
-                int copiedImages = 0;
+                // 保存图片引用路径
                 for (Relationship rel : relationships) {
                     logger.debug("处理关系: ID={}, Type={}, Target={}", rel.getId(), rel.getType(), rel.getTarget());
 
@@ -58,67 +58,44 @@ public class ResourceCopierUtil {
                     if (Namespaces.IMAGE.equals(rel.getType())) {
                         String target = rel.getTarget();
                         logger.info("发现图片关系: {}", target);
-
-                        // 构造 PartName
-                        PartName partName = new PartName("/" + target);
-                        logger.debug("尝试通过PartName获取图片部件: {}", partName.getName());
-
-                        // 从 doc2 获取图片部件
-                        Part imgPart = tempDoc.getParts().get(partName);
-                        if (imgPart == null) {
-                            // 尝试通过关系获取图片部件
-                            try {
-                                logger.debug("通过关系获取图片部件...");
-                                imgPart = relPart2.getPart(rel);
-                            } catch (Exception e) {
-                                logger.error("无法通过关系获取图片部件: {}, 错误: {}", target, e.getMessage());
-                                continue;
-                            }
+                        
+                        // 重命名图片
+                        updatedImageCounter++;
+                        String extension = "";
+                        int lastDotIndex = target.lastIndexOf('.');
+                        if (lastDotIndex > 0) {
+                            extension = target.substring(lastDotIndex);
                         }
-
-                        if (imgPart == null) {
-                            logger.error("图片部件不存在: {}", target);
-                            continue;
-                        }
-
-                        logger.debug("_TypeInfo: {}", imgPart.getClass().getName());
-
-                        if (!(imgPart instanceof BinaryPartAbstractImage)) {
-                            logger.error("图片部件类型错误: {}, 实际类型: {}", target, imgPart.getClass().getName());
-                            continue;
-                        }
-
-                        // 将图片部件添加到doc1中
-                        logger.debug("正在复制图片: {}", target);
-                        BinaryPartAbstractImage binaryImage = (BinaryPartAbstractImage) imgPart;
-                        BinaryPartAbstractImage newImagePart = BinaryPartAbstractImage.createImagePart(
-                                doc1,
-                                doc1.getMainDocumentPart(),
-                                binaryImage.getBytes()
-                        );
-
-                        // 获取新生成的关系 ID
-                        String newId = newImagePart.getSourceRelationships().get(0).getId();
-                        String oldId = rel.getId();
-
-                        // 建立旧ID到新ID的映射
-                        imageRelMap.put(oldId, newId);
-
-                        copiedImages++;
-                        logger.info("图片已复制: {}, 旧 relId: {}, 新 relId: {}", target, oldId, newId);
+                        String newName = String.format("image_%05d%s", updatedImageCounter, extension);
+                        
+                        // 保存图片引用路径映射（包含文档信息）
+                        Map<String, String> docImageRef = new HashMap<>();
+                        docImageRef.put("originalPath", target);
+                        docImageRef.put("newName", newName);
+                        docImageRef.put("docIndex", String.valueOf(i));
+                        imageReferences.put(rel.getId(), docImageRef);
+                        
+                        // 保存关系ID映射，用于后续更新引用
+                        imageRelMap.put(rel.getId(), "rId" + updatedImageCounter);
+                        
+                        logger.info("图片引用已保存: {} -> {}", target, newName);
                     } else {
                         logger.debug("跳过非图片关系: {}", rel.getType());
                     }
                 }
-                logger.info("文档{}图片复制完成，共复制 {} 张图片", (i + 1), copiedImages);
+                
+                // 更新当前文档的图片引用关系
                 updateImageReferences(tempDoc, imageRelMap);
             }
+            
+            logger.info("图片引用路径保存完成");
 
         } catch (Exception e) {
-            LoggerUtil.logMethodException(logger, "copyImages", e);
+            LoggerUtil.logMethodException(logger, "saveImageReferences", e);
         }
         
-        LoggerUtil.logMethodExit(logger, "copyImages", "图片复制完成");
+        LoggerUtil.logMethodExit(logger, "saveImageReferences", "图片引用保存完成");
+        return updatedImageCounter;
     }
 
 

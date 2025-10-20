@@ -2,8 +2,8 @@ package cn.liulin.docx.util;
 
 import org.docx4j.XmlUtils;
 import org.docx4j.jaxb.Context;
-import org.docx4j.openpackaging.exceptions.Docx4JException;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
+import org.docx4j.openpackaging.parts.PartName;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
 import org.docx4j.openpackaging.parts.WordprocessingML.StyleDefinitionsPart;
 import org.docx4j.wml.*;
@@ -21,23 +21,71 @@ import java.util.List;
  */
 public class WordProcessingUtils {
     private static final Logger logger = LoggerFactory.getLogger(WordProcessingUtils.class);
-
+    
     /**
-     * 根据处理后的文档路径列表加载Word文档
-     * 该方法会遍历路径列表，将每个路径对应的文档加载为WordprocessingMLPackage对象
+     * 根据处理后的文档路径列表加载Word文档（跳过图片加载）
+     * 该方法会遍历路径列表，将每个路径对应的文档加载为WordprocessingMLPackage对象，但跳过图片部分
      * 
      * @param processedDocPathList 包含处理后文档路径的列表
      * @return 包含WordprocessingMLPackage对象的列表
-     * @throws Docx4JException 如果加载文档过程中发生错误
+     * @throws Exception 如果加载文档过程中发生错误
      */
-    public static List<WordprocessingMLPackage> loadDocList(List<String> processedDocPathList) throws Docx4JException {
+    public static List<WordprocessingMLPackage> loadDocListSkipImages(List<String> processedDocPathList) throws Exception {
         List<WordprocessingMLPackage> docList = new ArrayList<>();
-        // 遍历处理后的文档路径列表，加载每个文档
+        // 遍历处理后的文档路径列表，加载每个文档（跳过图片）
         for (String processedDocPath : processedDocPathList) {
-            WordprocessingMLPackage load = WordprocessingMLPackage.load(new File(processedDocPath));
+            WordprocessingMLPackage load = loadWithoutImageBytes(new File(processedDocPath));
             docList.add(load);
         }
         return docList;
+    }
+    
+    /**
+     * 加载文档但跳过图片字节数据
+     * 
+     * @param file 文档文件
+     * @return 加载的WordprocessingMLPackage对象
+     * @throws Exception 如果加载过程中发生错误
+     */
+    public static WordprocessingMLPackage loadWithoutImageBytes(File file) throws Exception {
+        // 使用自定义PartName策略来跳过图片加载
+        WordprocessingMLPackage pkg = WordprocessingMLPackage.load(file);
+        
+        // 移除所有图片部分以节省内存
+        removeImageParts(pkg);
+        
+        return pkg;
+    }
+    
+    /**
+     * 移除文档中的图片部分以节省内存
+     * 
+     * @param pkg WordprocessingMLPackage对象
+     */
+    private static void removeImageParts(WordprocessingMLPackage pkg) {
+        try {
+            // 获取所有部分的名称
+            List<PartName> partNamesToRemove = new ArrayList<>();
+            
+            for (PartName partName : pkg.getParts().getParts().keySet()) {
+                String name = partName.getName();
+                // 检查是否为图片部分
+                if (name.startsWith("/word/media/") && 
+                    (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || 
+                     name.endsWith(".gif") || name.endsWith(".bmp") || name.endsWith(".tiff") ||
+                     name.endsWith(".wmf") || name.endsWith(".emf"))) {
+                    partNamesToRemove.add(partName);
+                }
+            }
+            
+            // 移除图片部分
+            for (PartName partName : partNamesToRemove) {
+                pkg.getParts().remove(partName);
+                logger.debug("移除图片部分: {}", partName.getName());
+            }
+        } catch (Exception e) {
+            logger.warn("移除图片部分时出错: {}", e.getMessage());
+        }
     }
 
     /**
