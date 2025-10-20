@@ -49,7 +49,7 @@ public class DocxMerger {
                 batch.add(docPathList.get(i));
                 
                 // 每10个文档处理一次，或者到达最后一个文档时处理
-                if (batch.size() >= 10 || i == docPathList.size() - 1) {
+                if (batch.size() >= 100 || i == docPathList.size() - 1) {
                     if (resultDoc == null) {
                         // 第一批文档，创建基础文档
                         resultDoc = mergeBatch(batch, null);
@@ -67,6 +67,7 @@ public class DocxMerger {
             // 保存最终文档
             resultDoc.save(output);
             logger.info("文档已成功合并并保存到: {}", outputPath);
+            resultDoc.reset();
             
             LoggerUtil.logMethodExit(logger, "mergeList", "合并完成");
         } catch (Exception e) {
@@ -128,7 +129,10 @@ public class DocxMerger {
         for (String s : processedDocPathList) {
             Files.deleteIfExists(Paths.get(s));
         }
-        
+
+        for (int i = 1; i < docList.size(); i++) {
+            docList.get(i).reset();
+        }
         logger.info("批次处理完成");
         return resultDoc;
     }
