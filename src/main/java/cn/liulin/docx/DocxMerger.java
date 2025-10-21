@@ -21,11 +21,11 @@ import java.util.zip.ZipOutputStream;
 public class DocxMerger {
     private static final Logger logger = LoggerUtil.getLogger(DocxMerger.class);
     
-    // 存储所有图片引用路径 ((原始路径+文档索引) -> 新名称)
-    private Map<String, String> imageReferences = new HashMap<>();
+    // 存储所有图片引用路径 ((原始路径+文档索引) -> {新名称, 新ID})
+    private Map<String, Map<String, String>> imageReferences = new HashMap<>();
     
     // 图片计数器
-    private int imageCounter = 10;
+    private int imageCounter = 0;
 
     /**
      * 合并传入的多个文档
@@ -189,11 +189,12 @@ public class DocxMerger {
             }
             
             // 添加图片文件 ((原始路径+文档索引) -> 新名称)
-            for (Map.Entry<String, String> imageRefEntry : imageReferences.entrySet()) {
-                String key = imageRefEntry.getKey();
-                String newName = imageRefEntry.getValue();
+            for (Map.Entry<String, Map<String, String>> imageRefEntry : imageReferences.entrySet()) {
+                Map<String, String> imageInfo = imageRefEntry.getValue();
+                String newName = imageInfo.get("newName");
                 
                 // 解析key获取原始路径和文档索引
+                String key = imageRefEntry.getKey();
                 String[] parts = key.split("\\|");
                 String originalPath = parts[0];
                 int docIndex = Integer.parseInt(parts[1]);
@@ -300,7 +301,6 @@ public class DocxMerger {
              ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(filePath + ".tmp"))) {
             
             ZipEntry entry;
-            int imageIdCounter = 9; // 从rId9开始
             while ((entry = zis.getNextEntry()) != null) {
                 ZipEntry newEntry = new ZipEntry(entry.getName());
                 zos.putNextEntry(newEntry);
@@ -325,10 +325,11 @@ public class DocxMerger {
                     if (insertPos != -1) {
                         StringBuilder imageRels = new StringBuilder();
                         // 添加图片关系
-                        for (Map.Entry<String, String> imageRefEntry : imageReferences.entrySet()) {
-                            String newName = imageRefEntry.getValue();
-                            imageIdCounter++;
-                            imageRels.append("  <Relationship Id=\"rId").append(imageIdCounter)
+                        for (Map.Entry<String, Map<String, String>> imageRefEntry : imageReferences.entrySet()) {
+                            Map<String, String> imageInfo = imageRefEntry.getValue();
+                            String newName = imageInfo.get("newName");
+                            String newRelId = imageInfo.get("newRelId");
+                            imageRels.append("  <Relationship Id=\"").append(newRelId)
                                     .append("\" Target=\"media/").append(newName)
                                     .append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\"/>\n");
                         }

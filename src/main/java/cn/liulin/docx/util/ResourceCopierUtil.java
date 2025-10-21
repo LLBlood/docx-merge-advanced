@@ -24,12 +24,12 @@ public class ResourceCopierUtil {
      * 保存图片引用路径，不直接复制图片
      * 
      * @param docPath 包含WordprocessingMLPackage对象的文档列表
-     * @param imageReferences 图片引用映射集合，保存(原始路径+文档索引)到新名称的映射
+     * @param imageReferences 图片引用映射集合，保存(原始路径+文档索引)到{新名称,新ID}的映射
      * @param imageCounter 图片计数器
      * @return 更新后的图片计数器
      */
     public static int saveImageReferences(List<WordprocessingMLPackage> docPath, 
-                                          Map<String, String> imageReferences, 
+                                          Map<String, Map<String, String>> imageReferences, 
                                           int imageCounter) {
         LoggerUtil.logMethodEntry(logger, "saveImageReferences", docPath != null ? docPath.size() : 0);
 
@@ -68,14 +68,20 @@ public class ResourceCopierUtil {
                         }
                         String newName = String.format("image_%05d%s", updatedImageCounter, extension);
                         
-                        // 保存图片引用路径映射（原始路径+文档索引 -> 新名称）
+                        // 生成新的关系ID
+                        String newRelId = "rId" + (999 + updatedImageCounter); // 从rId999开始，避免冲突
+                        
+                        // 保存图片引用路径映射（原始路径+文档索引 -> {新名称, 新ID}）
                         String key = target + "|" + i;  // 使用原始路径和文档索引组合作为key
-                        imageReferences.put(key, newName);
+                        Map<String, String> imageInfo = new HashMap<>();
+                        imageInfo.put("newName", newName);
+                        imageInfo.put("newRelId", newRelId);
+                        imageReferences.put(key, imageInfo);
                         
                         // 保存关系ID映射，用于后续更新引用
-                        imageRelMap.put(rel.getId(), "rId" + updatedImageCounter);
+                        imageRelMap.put(rel.getId(), newRelId);
                         
-                        logger.info("图片引用已保存: {} -> {}", target, newName);
+                        logger.info("图片引用已保存: {} -> {}, ID: {}", target, newName, newRelId);
                     } else {
                         logger.debug("跳过非图片关系: {}", rel.getType());
                     }
