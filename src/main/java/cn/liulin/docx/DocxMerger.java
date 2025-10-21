@@ -5,15 +5,10 @@ import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
 import org.slf4j.Logger;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -26,11 +21,11 @@ import java.util.zip.ZipOutputStream;
 public class DocxMerger {
     private static final Logger logger = LoggerUtil.getLogger(DocxMerger.class);
     
-    // 存储所有图片引用路径 (关系ID -> {原始路径, 新名称, 文档索引})
-    private Map<String, Map<String, String>> imageReferences = new HashMap<>();
+    // 存储所有图片引用路径 ((原始路径+文档索引) -> 新名称)
+    private Map<String, String> imageReferences = new HashMap<>();
     
     // 图片计数器
-    private int imageCounter = 0;
+    private int imageCounter = 10;
 
     /**
      * 合并传入的多个文档
@@ -81,8 +76,8 @@ public class DocxMerger {
             // 保存最终文档
             resultDoc.save(output);
             
-            // 在保存后复制图片到最终文档
-//            copyImagesToFinalDocument(docPathList, outputPath);
+            // 在保存后复制图片到最终文档并更新相关XML文件
+            copyImagesToFinalDocument(docPathList, outputPath);
             
             logger.info("文档已成功合并并保存到: {}", outputPath);
             resultDoc.reset();
@@ -170,9 +165,12 @@ public class DocxMerger {
             return;
         }
         
-        // 直接在输出文件上操作，添加图片
+        // 创建临时文件用于处理
+        String tempPath = outputPath + ".tmp";
+        
+        // 先复制所有ZIP条目并添加图片文件
         try (ZipInputStream zis = new ZipInputStream(new FileInputStream(outputPath));
-             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(outputPath + ".tmp"))) {
+             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tempPath))) {
             
             // 复制所有现有条目
             ZipEntry entry;
@@ -190,23 +188,174 @@ public class DocxMerger {
                 zos.closeEntry();
             }
             
-            // 添加图片文件
-            for (Map.Entry<String, Map<String, String>> imageRefEntry : imageReferences.entrySet()) {
-                Map<String, String> imageInfo = imageRefEntry.getValue();
-                String originalPath = imageInfo.get("originalPath");
-                String newName = imageInfo.get("newName");
-                int docIndex = Integer.parseInt(imageInfo.get("docIndex"));
+            // 添加图片文件 ((原始路径+文档索引) -> 新名称)
+            for (Map.Entry<String, String> imageRefEntry : imageReferences.entrySet()) {
+                String key = imageRefEntry.getKey();
+                String newName = imageRefEntry.getValue();
+                
+                // 解析key获取原始路径和文档索引
+                String[] parts = key.split("\\|");
+                String originalPath = parts[0];
+                int docIndex = Integer.parseInt(parts[1]);
                 
                 // 从原始文档中提取图片并添加到新文档中
                 copyImageFromSourceDoc(docPathList.get(docIndex), originalPath, newName, zos);
             }
         }
         
+        // 更新[Content_Types].xml文件
+        updateContentTypes(tempPath);
+        
+        // 更新word/_rels/document.xml.rels文件
+        updateDocumentRels(tempPath);
+        
         // 替换原文件
         Files.deleteIfExists(Paths.get(outputPath));
-        Files.move(Paths.get(outputPath + ".tmp"), Paths.get(outputPath));
+        Files.move(Paths.get(tempPath), Paths.get(outputPath));
         
         logger.info("图片复制完成");
+    }
+    
+    /**
+     * 更新[Content_Types].xml文件，添加图片类型声明
+     * 
+     * @param filePath 文件路径
+     * @throws Exception IO异常
+     */
+    private void updateContentTypes(String filePath) throws Exception {
+        // 读取并更新[Content_Types].xml
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(filePath));
+             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(filePath + ".tmp"))) {
+            
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                ZipEntry newEntry = new ZipEntry(entry.getName());
+                zos.putNextEntry(newEntry);
+                
+                if ("[Content_Types].xml".equals(entry.getName())) {
+                    // 处理[Content_Types].xml文件
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] data = new byte[8192];
+                    int len;
+                    while ((len = zis.read(data)) > 0) {
+                        buffer.write(data, 0, len);
+                    }
+                    
+                    String content = new String(buffer.toByteArray(), "UTF-8");
+                    
+                    // 检查是否已存在图片类型声明，避免重复添加
+                    if (!content.contains("image/jpeg") && !content.contains("image/png")) {
+                        // 在</Types>标签前插入图片类型声明
+                        StringBuilder newContent = new StringBuilder(content);
+                        int insertPos = newContent.lastIndexOf("</Types>");
+                        if (insertPos != -1) {
+                            // 插入常用的图片类型声明
+                            String imageTypes = 
+                                "  <Default ContentType=\"image/jpeg\" Extension=\"jpeg\"/>\n" +
+                                "  <Default ContentType=\"image/jpeg\" Extension=\"jpg\"/>\n" +
+                                "  <Default ContentType=\"image/png\" Extension=\"png\"/>\n" +
+                                "  <Default ContentType=\"image/gif\" Extension=\"gif\"/>\n" +
+                                "  <Default ContentType=\"image/bmp\" Extension=\"bmp\"/>\n" +
+                                "  <Default ContentType=\"image/tiff\" Extension=\"tiff\"/>\n" +
+                                "  <Default ContentType=\"image/tiff\" Extension=\"tif\"/>\n";
+                            
+                            newContent.insert(insertPos, imageTypes);
+                            zos.write(newContent.toString().getBytes("UTF-8"));
+                        } else {
+                            // 如果没有找到</Types>标签，直接写入原内容
+                            zos.write(buffer.toByteArray());
+                        }
+                    } else {
+                        // 如果已存在图片类型声明，直接写入原内容
+                        zos.write(buffer.toByteArray());
+                    }
+                } else {
+                    // 直接复制其他文件
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                }
+                
+                zis.closeEntry();
+                zos.closeEntry();
+            }
+        }
+        
+        // 替换文件
+        Files.deleteIfExists(Paths.get(filePath));
+        Files.move(Paths.get(filePath + ".tmp"), Paths.get(filePath));
+    }
+    
+    /**
+     * 更新word/_rels/document.xml.rels文件，添加图片关系
+     * 
+     * @param filePath 文件路径
+     * @throws Exception IO异常
+     */
+    private void updateDocumentRels(String filePath) throws Exception {
+        // 读取并更新word/_rels/document.xml.rels
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(filePath));
+             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(filePath + ".tmp"))) {
+            
+            ZipEntry entry;
+            int imageIdCounter = 9; // 从rId9开始
+            while ((entry = zis.getNextEntry()) != null) {
+                ZipEntry newEntry = new ZipEntry(entry.getName());
+                zos.putNextEntry(newEntry);
+                
+                if ("word/_rels/document.xml.rels".equals(entry.getName())) {
+                    // 处理word/_rels/document.xml.rels文件
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] data = new byte[8192];
+                    int len;
+                    while ((len = zis.read(data)) > 0) {
+                        buffer.write(data, 0, len);
+                    }
+                    
+                    String content = new String(buffer.toByteArray(), "UTF-8");
+                    
+                    // 删除现有的图片关系（对于第一个文档）
+                    content = content.replaceAll("<Relationship[^>]*Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\"[^>]*/>", "");
+                    
+                    // 在</Relationships>标签前插入新的图片关系
+                    StringBuilder newContent = new StringBuilder(content);
+                    int insertPos = newContent.lastIndexOf("</Relationships>");
+                    if (insertPos != -1) {
+                        StringBuilder imageRels = new StringBuilder();
+                        // 添加图片关系
+                        for (Map.Entry<String, String> imageRefEntry : imageReferences.entrySet()) {
+                            String newName = imageRefEntry.getValue();
+                            imageIdCounter++;
+                            imageRels.append("  <Relationship Id=\"rId").append(imageIdCounter)
+                                    .append("\" Target=\"media/").append(newName)
+                                    .append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\"/>\n");
+                        }
+                        
+                        newContent.insert(insertPos, imageRels.toString());
+                        zos.write(newContent.toString().getBytes("UTF-8"));
+                    } else {
+                        // 如果没有找到</Relationships>标签，直接写入原内容
+                        zos.write(buffer.toByteArray());
+                    }
+                } else {
+                    // 直接复制其他文件
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        zos.write(buffer, 0, len);
+                    }
+                }
+                
+                zis.closeEntry();
+                zos.closeEntry();
+            }
+        }
+        
+        // 替换文件
+        Files.deleteIfExists(Paths.get(filePath));
+        Files.move(Paths.get(filePath + ".tmp"), Paths.get(filePath));
     }
     
     /**

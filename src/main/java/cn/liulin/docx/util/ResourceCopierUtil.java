@@ -24,12 +24,12 @@ public class ResourceCopierUtil {
      * 保存图片引用路径，不直接复制图片
      * 
      * @param docPath 包含WordprocessingMLPackage对象的文档列表
-     * @param imageReferences 图片引用映射集合
+     * @param imageReferences 图片引用映射集合，保存(原始路径+文档索引)到新名称的映射
      * @param imageCounter 图片计数器
      * @return 更新后的图片计数器
      */
     public static int saveImageReferences(List<WordprocessingMLPackage> docPath, 
-                                          Map<String, Map<String, String>> imageReferences, 
+                                          Map<String, String> imageReferences, 
                                           int imageCounter) {
         LoggerUtil.logMethodEntry(logger, "saveImageReferences", docPath != null ? docPath.size() : 0);
 
@@ -68,12 +68,9 @@ public class ResourceCopierUtil {
                         }
                         String newName = String.format("image_%05d%s", updatedImageCounter, extension);
                         
-                        // 保存图片引用路径映射（包含文档信息）
-                        Map<String, String> docImageRef = new HashMap<>();
-                        docImageRef.put("originalPath", target);
-                        docImageRef.put("newName", newName);
-                        docImageRef.put("docIndex", String.valueOf(i));
-                        imageReferences.put(rel.getId(), docImageRef);
+                        // 保存图片引用路径映射（原始路径+文档索引 -> 新名称）
+                        String key = target + "|" + i;  // 使用原始路径和文档索引组合作为key
+                        imageReferences.put(key, newName);
                         
                         // 保存关系ID映射，用于后续更新引用
                         imageRelMap.put(rel.getId(), "rId" + updatedImageCounter);
